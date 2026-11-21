@@ -1,0 +1,6 @@
+{
+  "name": "Fluxo — Controle de Despesas",
+  "description": "Aplicativo pessoal de controle de despesas mensais com memória local no navegador, comparativo de economia e gráficos interativos.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
