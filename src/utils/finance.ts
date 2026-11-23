@@ -5,6 +5,7 @@ import {
   ExpenseCategory,
   ExpenseType,
   FinanceStoreData,
+  InstallmentAmountMode,
   MonthComparison,
   MonthSummary,
   PaymentBreakdownItem,
@@ -156,6 +157,125 @@ export function shiftMonth(monthKey: string, delta: number): string {
   const nextYear = Math.floor(totalMonths / 12);
   const nextMonth = ((totalMonths % 12) + 12) % 12;
   return `${nextYear}-${String(nextMonth + 1).padStart(2, '0')}`;
+}
+
+export function daysInMonth(monthKey: string): number {
+  if (!isValidMonthKey(monthKey)) return 31;
+  const [yearStr, monthStr] = monthKey.split('-');
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  return new Date(year, month, 0).getDate();
+}
+
+export interface InstallmentPlanInput {
+  name: string;
+  amount: number;
+  amountMode: InstallmentAmountMode;
+  category: ExpenseCategory;
+  type: ExpenseType;
+  paymentMethod: PaymentMethod;
+  startMonth: string;
+  day: number;
+  note?: string;
+  installmentsCount: number;
+  startingInstallment?: number;
+  groupId: string;
+}
+
+export interface InstallmentPreviewSummary {
+  countToCreate: number;
+  installmentsTotal: number;
+  startingInstallment: number;
+  perInstallment: number;
+  firstInstallment: number;
+  totalAmount: number;
+  endMonth: string;
+}
+
+export function calculateInstallmentPreview(
+  amount: number,
+  installmentsCount: number,
+  startingInstallment: number,
+  amountMode: InstallmentAmountMode,
+  startMonth: string
+): InstallmentPreviewSummary {
+  const safeTotal = Math.max(2, Math.min(60, Math.round(installmentsCount)));
+  const safeStart = Math.max(1, Math.min(safeTotal, Math.round(startingInstallment)));
+  const remaining = safeTotal - safeStart + 1;
+
+  let perInstallment = roundCurrency(amount);
+  let firstInstallment = perInstallment;
+  let totalAmount = roundCurrency(perInstallment * remaining);
+
+  if (amountMode === 'total') {
+    const totalCents = Math.round(amount * 100);
+    const baseCents = Math.floor(totalCents / remaining);
+    const remainderCents = totalCents - baseCents * remaining;
+    perInstallment = baseCents / 100;
+    firstInstallment = (baseCents + remainderCents) / 100;
+    totalAmount = totalCents / 100;
+  }
+
+  return {
+    countToCreate: remaining,
+    installmentsTotal: safeTotal,
+    startingInstallment: safeStart,
+    perInstallment,
+    firstInstallment,
+    totalAmount,
+    endMonth: shiftMonth(startMonth, remaining - 1),
+  };
+}
+
+export function createInstallmentExpenses(
+  plan: InstallmentPlanInput,
+  idFactory: () => string
+): Expense[] {
+  const safeTotal = Math.max(2, Math.min(60, Math.round(plan.installmentsCount)));
+  const safeStart = Math.max(
+    1,
+    Math.min(safeTotal, Math.round(plan.startingInstallment ?? 1))
+  );
+  const remaining = safeTotal - safeStart + 1;
+  const nowIso = new Date().toISOString();
+
+  const totalCents = Math.round(plan.amount * 100);
+  const baseCents =
+    plan.amountMode === 'total' ? Math.floor(totalCents / remaining) : totalCents;
+  const remainderCents =
+    plan.amountMode === 'total' ? totalCents - baseCents * remaining : 0;
+
+  const created: Expense[] = [];
+
+  for (let i = 0; i < remaining; i++) {
+    const targetMonth = shiftMonth(plan.startMonth, i);
+    const clampedDay = Math.min(
+      Math.max(1, Math.round(plan.day)),
+      daysInMonth(targetMonth)
+    );
+    const installmentCents =
+      plan.amountMode === 'total' && i === 0
+        ? baseCents + remainderCents
+        : baseCents;
+
+    created.push({
+      id: idFactory(),
+      name: plan.name,
+      amount: roundCurrency(installmentCents / 100),
+      category: plan.category,
+      type: plan.type,
+      paymentMethod: plan.paymentMethod,
+      month: targetMonth,
+      day: clampedDay,
+      note: plan.note,
+      installmentGroupId: plan.groupId,
+      installmentCurrent: safeStart + i,
+      installmentTotal: safeTotal,
+      createdAt: nowIso,
+    });
+  }
+
+  return created;
 }
 
 export function formatMonthLabel(monthKey: string): string {
@@ -338,7 +458,10 @@ export interface HistoricalStats {
   lowestMonth: { month: string; total: number } | null;
 }
 
-export function getHistoricalStats(expenses: Expense[]): HistoricalStats {
+export function getHistoricalStats(
+  expenses: Expense[],
+  upToMonth?: string
+): HistoricalStats {
   const totalsByMonth = new Map<string, number>();
 
   for (const exp of expenses) {
@@ -346,7 +469,14 @@ export function getHistoricalStats(expenses: Expense[]): HistoricalStats {
     totalsByMonth.set(exp.month, roundCurrency(prev + exp.amount));
   }
 
-  const entries = Array.from(totalsByMonth.entries());
+  let entries = Array.from(totalsByMonth.entries());
+  if (upToMonth) {
+    const pastOrCurrent = entries.filter(([month]) => month <= upToMonth);
+    if (pastOrCurrent.length > 0) {
+      entries = pastOrCurrent;
+    }
+  }
+
   if (entries.length === 0) {
     return {
       average: 0,
@@ -448,7 +578,7 @@ export function cloneFixedExpensesToMonth(
   idFactory: () => string
 ): Expense[] {
   const sourceFixed = expenses.filter(
-    (e) => e.month === sourceMonth && e.type === 'fixa'
+    (e) => e.month === sourceMonth && e.type === 'fixa' && !e.installmentGroupId
   );
   const existingInTarget = expenses.filter((e) => e.month === targetMonth);
 
@@ -530,6 +660,27 @@ export function validateBackupPayload(
     const rawDay = typeof item.day === 'number' ? Math.round(item.day) : 1;
     const day = Math.min(31, Math.max(1, Number.isFinite(rawDay) ? rawDay : 1));
 
+    const installmentGroupId =
+      typeof item.installmentGroupId === 'string' &&
+      item.installmentGroupId.trim()
+        ? item.installmentGroupId.trim()
+        : undefined;
+    const rawTotal =
+      typeof item.installmentTotal === 'number'
+        ? Math.round(item.installmentTotal)
+        : undefined;
+    const rawCurrent =
+      typeof item.installmentCurrent === 'number'
+        ? Math.round(item.installmentCurrent)
+        : undefined;
+    const hasValidInstallment =
+      Boolean(installmentGroupId) &&
+      typeof rawTotal === 'number' &&
+      rawTotal >= 2 &&
+      typeof rawCurrent === 'number' &&
+      rawCurrent >= 1 &&
+      rawCurrent <= rawTotal;
+
     sanitized.push({
       id:
         typeof item.id === 'string' && item.id.trim()
@@ -543,6 +694,13 @@ export function validateBackupPayload(
       month,
       day,
       note: typeof item.note === 'string' ? item.note.trim() || undefined : undefined,
+      ...(hasValidInstallment
+        ? {
+            installmentGroupId,
+            installmentCurrent: rawCurrent,
+            installmentTotal: rawTotal,
+          }
+        : {}),
       createdAt:
         typeof item.createdAt === 'string' ? item.createdAt : new Date().toISOString(),
     });

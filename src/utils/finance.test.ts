@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   cloneFixedExpensesToMonth,
+  createInstallmentExpenses,
+  daysInMonth,
   formatBRL,
   formatMonthLabel,
   formatMonthShort,
@@ -87,6 +89,8 @@ test('shiftMonth navigates safely across year boundaries', () => {
   assert.equal(shiftMonth('2026-11', -3), '2026-08');
   assert.equal(formatMonthLabel('2026-11'), 'Novembro 2026');
   assert.equal(formatMonthShort('2026-11'), 'Nov/26');
+  assert.equal(daysInMonth('2027-02'), 28);
+  assert.equal(daysInMonth('2028-02'), 29);
 });
 
 test('getMonthSummary calculates total, fixed/variable split, and top category', () => {
@@ -114,13 +118,34 @@ test('getMonthComparison returns no_baseline when previous month is empty', () =
   assert.equal(comp.percentChange, null);
 });
 
-test('getHistoricalStats computes average across months with expenses', () => {
+test('getHistoricalStats computes average across months with expenses and respects upToMonth cutoff', () => {
   const stats = getHistoricalStats(sampleExpenses);
   assert.equal(stats.monthsCount, 2);
   assert.equal(stats.grandTotal, 3800);
   assert.equal(stats.average, 1900);
   assert.equal(stats.highestMonth?.month, '2026-10');
   assert.equal(stats.lowestMonth?.month, '2026-11');
+
+  const withFutureInstallment: Expense[] = [
+    ...sampleExpenses,
+    {
+      id: 'future-1',
+      name: 'SSD',
+      amount: 37.5,
+      category: 'outros',
+      type: 'variavel',
+      paymentMethod: 'credito',
+      month: '2026-12',
+      day: 23,
+      installmentGroupId: 'grp-1',
+      installmentCurrent: 2,
+      installmentTotal: 12,
+      createdAt: '2026-11-23T00:00:00Z',
+    },
+  ];
+  const cutoffStats = getHistoricalStats(withFutureInstallment, '2026-11');
+  assert.equal(cutoffStats.monthsCount, 2);
+  assert.equal(cutoffStats.average, 1900);
 });
 
 test('getCategoryBreakdown sums and sorts categories descending', () => {
@@ -150,10 +175,85 @@ test('getPaymentMethodBreakdown summarizes all four payment methods with shares'
   assert.equal(dinheiro.total, 0);
 });
 
-test('cloneFixedExpensesToMonth copies fixed expenses preserving paymentMethod', () => {
+test('createInstallmentExpenses generates 12 consecutive monthly installments and stops at 12/12', () => {
   let seq = 1;
+  const created = createInstallmentExpenses(
+    {
+      name: 'SSD 1TB',
+      amount: 450,
+      amountMode: 'total',
+      category: 'outros',
+      type: 'variavel',
+      paymentMethod: 'credito',
+      startMonth: '2026-11',
+      day: 31,
+      installmentsCount: 12,
+      startingInstallment: 1,
+      groupId: 'grp-ssd',
+    },
+    () => `inst-${seq++}`
+  );
+
+  assert.equal(created.length, 12);
+  assert.equal(created[0].month, '2026-11');
+  assert.equal(created[0].installmentCurrent, 1);
+  assert.equal(created[0].installmentTotal, 12);
+  assert.equal(created[0].day, 30); // Nov has 30 days
+  assert.equal(created[3].month, '2027-02');
+  assert.equal(created[3].day, 28); // Feb 2027 has 28 days
+  assert.equal(created[11].month, '2027-10');
+  assert.equal(created[11].installmentCurrent, 12);
+  assert.equal(created[11].installmentTotal, 12);
+
+  const totalSum = created.reduce((sum, e) => sum + e.amount, 0);
+  assert.equal(Math.round(totalSum * 100) / 100, 450);
+});
+
+test('createInstallmentExpenses distributes indivisible cent remainders accurately', () => {
+  let seq = 1;
+  const created = createInstallmentExpenses(
+    {
+      name: 'Fone',
+      amount: 100,
+      amountMode: 'total',
+      category: 'outros',
+      type: 'variavel',
+      paymentMethod: 'credito',
+      startMonth: '2026-11',
+      day: 10,
+      installmentsCount: 3,
+      startingInstallment: 1,
+      groupId: 'grp-fone',
+    },
+    () => `f-${seq++}`
+  );
+  assert.deepEqual(
+    created.map((e) => e.amount),
+    [33.34, 33.33, 33.33]
+  );
+});
+
+test('cloneFixedExpensesToMonth copies fixed expenses preserving paymentMethod and skips installments', () => {
+  let seq = 1;
+  const withFixedInstallment: Expense[] = [
+    ...sampleExpenses,
+    {
+      id: 'inst-fix',
+      name: 'Notebook',
+      amount: 200,
+      category: 'outros',
+      type: 'fixa',
+      paymentMethod: 'credito',
+      month: '2026-11',
+      day: 10,
+      installmentGroupId: 'grp-nb',
+      installmentCurrent: 12,
+      installmentTotal: 12,
+      createdAt: '2026-11-10T00:00:00Z',
+    },
+  ];
   const cloned = cloneFixedExpensesToMonth(
-    sampleExpenses,
+    withFixedInstallment,
     '2026-11',
     '2026-12',
     () => `new-${seq++}`
@@ -183,8 +283,8 @@ test('getTimelineSeries generates chronological window including selected month'
   assert.equal(series[1].isSelected, true);
 });
 
-test('validateBackupPayload migrates legacy expenses without paymentMethod safely', () => {
-  const legacyPayload = {
+test('validateBackupPayload migrates legacy expenses and preserves valid installment metadata', () => {
+  const payload = {
     version: 1,
     expenses: [
       {
@@ -197,14 +297,31 @@ test('validateBackupPayload migrates legacy expenses without paymentMethod safel
         day: 5,
         createdAt: '2026-09-05T00:00:00Z',
       },
+      {
+        id: 'inst-1',
+        name: 'SSD 1TB',
+        amount: 37.5,
+        category: 'outros',
+        type: 'variavel',
+        paymentMethod: 'credito',
+        month: '2026-11',
+        day: 23,
+        installmentGroupId: 'grp-ssd',
+        installmentCurrent: 1,
+        installmentTotal: 12,
+        createdAt: '2026-11-23T00:00:00Z',
+      },
     ],
     monthlyGoal: 3500,
   };
-  const valid = validateBackupPayload(legacyPayload);
+  const valid = validateBackupPayload(payload);
   assert.equal(valid.ok, true);
   if (valid.ok) {
-    assert.equal(valid.data.expenses.length, 1);
+    assert.equal(valid.data.expenses.length, 2);
     assert.equal(valid.data.expenses[0].paymentMethod, 'pix');
+    assert.equal(valid.data.expenses[1].installmentGroupId, 'grp-ssd');
+    assert.equal(valid.data.expenses[1].installmentCurrent, 1);
+    assert.equal(valid.data.expenses[1].installmentTotal, 12);
   }
 
   const invalid = validateBackupPayload({

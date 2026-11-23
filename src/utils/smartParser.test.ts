@@ -94,3 +94,27 @@ test('rejects incomplete inputs without fabricating amount or name', () => {
   assert.equal(noName.valid, false);
   assert.equal(noName.name, '');
 });
+
+test('parses installment purchase with total amount (e.g. "450 ssd 12x") and defaults to crédito', () => {
+  const res = parseSmartExpenseInput('450 ssd 12x', '2026-11', REF_DATE);
+  assert.equal(res.valid, true);
+  assert.equal(res.name, 'SSD');
+  assert.equal(res.amount, 450);
+  assert.equal(res.installments, 12);
+  assert.equal(res.installmentAmountMode, 'total');
+  assert.equal(res.paymentMethod, 'credito');
+});
+
+test('parses installment purchase with per-installment amount (e.g. "ssd 12x de 45")', () => {
+  const res = parseSmartExpenseInput(
+    'ssd 1tb 12x de 45,90 crédito',
+    '2026-11',
+    REF_DATE
+  );
+  assert.equal(res.valid, true);
+  assert.equal(res.name, 'SSD 1tb');
+  assert.equal(res.amount, 45.9);
+  assert.equal(res.installments, 12);
+  assert.equal(res.installmentAmountMode, 'installment');
+  assert.equal(res.paymentMethod, 'credito');
+});

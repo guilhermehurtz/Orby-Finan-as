@@ -36,23 +36,27 @@ export function KpiStrip({ summary, historical, comparison }: KpiStripProps) {
   return (
     <section
       aria-label="Indicadores do mês"
-      className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
+      className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-4"
     >
       {/* 1. Total do mês */}
-      <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-5">
-        <p className="text-xs font-medium text-slate-400">Total gasto no mês</p>
+      <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-3.5 sm:p-5">
+        <p className="text-[11px] sm:text-xs font-medium text-slate-400 truncate">
+          Total no mês
+        </p>
         <p
           data-testid="kpi-month-total"
-          className="mt-2 text-2xl font-semibold tracking-tight text-slate-50 tabular-nums-mono"
+          className="mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold tracking-tight text-slate-50 tabular-nums-mono truncate"
         >
           {formatBRL(summary.total)}
         </p>
-        <p className="mt-2 text-xs text-slate-400 flex items-center gap-1.5 flex-wrap">
+        <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-400 flex items-center gap-1 flex-wrap">
           <span className="tabular-nums-mono text-slate-300">
-            {summary.count} {summary.count === 1 ? 'despesa' : 'despesas'}
+            {summary.count} {summary.count === 1 ? 'item' : 'itens'}
           </span>
-          <span aria-hidden="true">·</span>
-          <span>
+          <span aria-hidden="true" className="hidden sm:inline">
+            ·
+          </span>
+          <span className="hidden sm:inline">
             Fixas{' '}
             <span className="tabular-nums-mono text-slate-300">
               {formatBRL(summary.fixedTotal)}
@@ -62,42 +66,50 @@ export function KpiStrip({ summary, historical, comparison }: KpiStripProps) {
       </div>
 
       {/* 2. Média mensal */}
-      <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-5">
-        <p className="text-xs font-medium text-slate-400">Média mensal</p>
+      <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-3.5 sm:p-5">
+        <p className="text-[11px] sm:text-xs font-medium text-slate-400 truncate">
+          Média mensal
+        </p>
         <p
           data-testid="kpi-monthly-average"
-          className="mt-2 text-2xl font-semibold tracking-tight text-slate-50 tabular-nums-mono"
+          className="mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold tracking-tight text-slate-50 tabular-nums-mono truncate"
         >
           {formatBRL(historical.average)}
         </p>
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-400 truncate">
           {historical.monthsCount > 0
             ? `Base de ${historical.monthsCount} ${
-                historical.monthsCount === 1 ? 'mês registrado' : 'meses registrados'
+                historical.monthsCount === 1 ? 'mês' : 'meses'
               }`
-            : 'Nenhum mês com dados ainda'}
+            : 'Sem dados ainda'}
         </p>
       </div>
 
       {/* 3. Diferença vs. mês anterior */}
-      <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-5">
-        <p className="text-xs font-medium text-slate-400">Variação vs. anterior</p>
+      <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-3.5 sm:p-5">
+        <p className="text-[11px] sm:text-xs font-medium text-slate-400 truncate">
+          vs. mês anterior
+        </p>
         <p
           data-testid="kpi-month-delta"
-          className={`mt-2 text-2xl font-semibold tracking-tight tabular-nums-mono ${diffColor}`}
+          className={`mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold tracking-tight tabular-nums-mono truncate ${diffColor}`}
         >
           {diffFormatted}
         </p>
-        <p className="mt-2 text-xs text-slate-400">{diffSubtext}</p>
+        <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-400 truncate">
+          {diffSubtext}
+        </p>
       </div>
 
       {/* 4. Maior categoria */}
-      <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-5">
-        <p className="text-xs font-medium text-slate-400">Maior categoria</p>
-        <p className="mt-2 text-2xl font-semibold tracking-tight text-slate-50 truncate">
+      <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-3.5 sm:p-5">
+        <p className="text-[11px] sm:text-xs font-medium text-slate-400 truncate">
+          Maior categoria
+        </p>
+        <p className="mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold tracking-tight text-slate-50 truncate">
           {summary.topCategory ? summary.topCategory.label : '—'}
         </p>
-        <p className="mt-2 text-xs text-slate-400">
+        <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-400 truncate">
           {summary.topCategory ? (
             <>
               <span className="tabular-nums-mono text-slate-300">
@@ -105,11 +117,11 @@ export function KpiStrip({ summary, historical, comparison }: KpiStripProps) {
               </span>
               <span aria-hidden="true"> · </span>
               <span className="tabular-nums-mono">
-                {summary.topCategory.share.toFixed(1).replace('.', ',')}% do total
+                {summary.topCategory.share.toFixed(0)}%
               </span>
             </>
           ) : (
-            'Sem lançamentos neste mês'
+            'Sem lançamentos'
           )}
         </p>
       </div>

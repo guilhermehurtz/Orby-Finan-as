@@ -56,12 +56,12 @@ export function Sidebar({
           }}
           className="flex items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded-lg"
         >
-          <span className="h-9 w-9 rounded-[10px] overflow-hidden ring-1 ring-white/15 shrink-0 bg-[#0B1F4D] shadow-sm">
+          <span className="h-9 w-9 rounded-[10px] overflow-hidden shrink-0 flex items-center justify-center">
             <img
-              src="/assets/aistudio/favicon_2deb01cd.jpg"
+              src="/assets/aistudio/favicon_1_b76ee16a.png"
               alt="Logo orby"
               referrerPolicy="no-referrer"
-              className="h-full w-full object-cover scale-[1.26]"
+              className="h-full w-full object-contain scale-[1.12]"
             />
           </span>
           <span className="text-[21px] font-bold tracking-tight text-slate-50 font-[var(--font-display)] lowercase leading-none whitespace-nowrap">
@@ -73,7 +73,7 @@ export function Sidebar({
           type="button"
           onClick={onCloseMobile}
           aria-label="Fechar menu de navegação"
-          className="lg:hidden flex h-9 w-9 items-center justify-center rounded-lg text-slate-400 hover:bg-white/[0.06] hover:text-slate-100 transition-colors"
+          className="lg:hidden flex h-10 w-10 items-center justify-center rounded-lg text-slate-400 hover:bg-white/[0.06] hover:text-slate-100 transition-colors"
         >
           <X className="h-5 w-5" aria-hidden="true" />
         </button>
@@ -93,7 +93,7 @@ export function Sidebar({
                 onCloseMobile();
               }}
               aria-current={isActive ? 'page' : undefined}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+              className={`w-full min-h-[42px] flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors whitespace-nowrap focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                 isActive
                   ? 'bg-gradient-to-r from-emerald-500/[0.16] to-teal-500/[0.06] text-emerald-300 border border-emerald-500/20'
                   : 'text-slate-400 hover:text-slate-100 hover:bg-white/[0.04] border border-transparent'
@@ -126,7 +126,7 @@ export function Sidebar({
           </p>
         ) : (
           <ul className="space-y-1">
-            {recentMonths.slice(0, 8).map((item) => {
+            {recentMonths.map((item) => {
               const isSelected =
                 (activeTab === 'overview' || activeTab === 'payments') &&
                 item.month === selectedMonth;
@@ -141,9 +141,9 @@ export function Sidebar({
                       }
                       onCloseMobile();
                     }}
-                    className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
+                    className={`w-full min-h-[38px] flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
                       isSelected
-                        ? 'bg-white/[0.07] text-slate-100 font-medium'
+                        ? 'bg-white/[0.08] text-slate-100 font-medium'
                         : 'text-slate-400 hover:text-slate-200 hover:bg-white/[0.03]'
                     }`}
                   >

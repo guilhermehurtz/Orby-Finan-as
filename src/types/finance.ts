@@ -12,16 +12,23 @@ export type ExpenseType = 'fixa' | 'variavel';
 
 export type PaymentMethod = 'pix' | 'credito' | 'debito' | 'dinheiro';
 
+export type InstallmentAmountMode = 'total' | 'installment';
+
+export type InstallmentActionScope = 'single' | 'future' | 'all';
+
 export interface Expense {
   id: string;
   name: string;
-  amount: number; // Positive BRL value
+  amount: number; // Positive BRL value (amount of this installment if parcelado)
   category: ExpenseCategory;
   type: ExpenseType;
   paymentMethod: PaymentMethod;
   month: string; // Format: YYYY-MM
   day: number; // 1..31
   note?: string;
+  installmentGroupId?: string;
+  installmentCurrent?: number; // 1..installmentTotal
+  installmentTotal?: number; // >= 2
   createdAt: string;
 }
 

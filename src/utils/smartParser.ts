@@ -1,6 +1,7 @@
 import {
   ExpenseCategory,
   ExpenseType,
+  InstallmentAmountMode,
   PaymentMethod,
 } from '../types/finance';
 import { getCurrentMonthKey, parseBRLInput } from './finance';
@@ -19,6 +20,8 @@ export interface SmartParsedExpense {
   day: number;
   month: string;
   dateDetected: boolean;
+  installments: number | null;
+  installmentAmountMode: InstallmentAmountMode;
 }
 
 function normalizeText(str: string): string {
@@ -223,10 +226,41 @@ function inferFixedFromName(normalizedName: string): boolean {
   return false;
 }
 
+const UPPERCASE_ACRONYMS = new Set([
+  'ssd',
+  'hdd',
+  'nvme',
+  'tv',
+  'pc',
+  'ps5',
+  'ps4',
+  'cpu',
+  'gpu',
+  'ram',
+  'usb',
+  'hdmi',
+  'led',
+  'oled',
+  'pix',
+  'iptu',
+  'ipva',
+  'hbo',
+]);
+
 function capitalizeSentence(text: string): string {
   const trimmed = text.trim();
   if (!trimmed) return '';
-  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  const words = trimmed.split(/\s+/).map((word, idx) => {
+    const lower = word.toLowerCase();
+    if (UPPERCASE_ACRONYMS.has(lower)) {
+      return lower.toUpperCase();
+    }
+    if (idx === 0) {
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    }
+    return word;
+  });
+  return words.join(' ');
 }
 
 /**
@@ -249,7 +283,7 @@ export function parseSmartExpenseInput(
     return {
       raw,
       valid: false,
-      error: 'Digite uma despesa (ex.: 35 almoço pix).',
+      error: 'Digite uma despesa (ex.: 35 almoço pix ou 450 ssd 12x).',
       name: '',
       amount: null,
       category: 'outros',
@@ -260,6 +294,8 @@ export function parseSmartExpenseInput(
       day: defaultDay,
       month: activeMonth,
       dateDetected: false,
+      installments: null,
+      installmentAmountMode: 'total',
     };
   }
 
@@ -393,38 +429,82 @@ export function parseSmartExpenseInput(
     }
   }
 
-  // 4. Extract Monetary Amount (supports "R$ 35", "35", "129,90", "1.250,00", "42.50")
+  // 3.5. Extract Installments BEFORE extracting standalone monetary amount
+  //      Supports:
+  //       - "12x de 45" / "em 12x de R$ 45,90" (amount is per installment)
+  //       - "450 ssd 12x" / "em 12x" / "12 parcelas" / "12 vezes" (amount is total)
+  let installments: number | null = null;
+  let installmentAmountMode: InstallmentAmountMode = 'total';
   let amount: number | null = null;
-  const amountRegex = /(?:^|\s)(?:r\$\s*)?(\d+(?:[.,]\d{1,3})*(?:[.,]\d{1,2})?)(?:\s*reais?)?(?=\s|$)/i;
-  const amountMatches = Array.from(
-    working.matchAll(
-      /(?:^|\s)((?:r\$\s*)?\d+(?:[.,]\d{1,3})*(?:[.,]\d{1,2})?(?:\s*reais?)?)(?=\s|$)/gi
-    )
-  );
 
-  // Prefer tokens with currency symbol/decimals, otherwise first standalone number (avoid stripping "99" in "99 pop" if another value exists)
-  let chosenMatch: RegExpMatchArray | null = null;
-  if (amountMatches.length === 1) {
-    chosenMatch = amountMatches[0];
-  } else if (amountMatches.length > 1) {
-    chosenMatch =
-      amountMatches.find((m) => /r\$|reais|[.,]/i.test(m[1])) ?? amountMatches[0];
+  const perInstallmentMatch = working.match(
+    /(?:^|\s)(?:em\s+|parcelado\s+(?:em\s+)?)?(\d{1,2})\s*(?:x|vezes|parcelas?)\s+de\s+(?:r\$\s*)?(\d+(?:[.,]\d{1,3})*(?:[.,]\d{1,2})?)(?:\s*reais?)?(?=\s|$)/i
+  );
+  if (perInstallmentMatch) {
+    const count = Number(perInstallmentMatch[1]);
+    const parsedVal = parseBRLInput(perInstallmentMatch[2]);
+    if (count >= 2 && count <= 60 && parsedVal !== null) {
+      installments = count;
+      installmentAmountMode = 'installment';
+      amount = parsedVal;
+      working = working.replace(perInstallmentMatch[0], ' ');
+    }
   }
 
-  if (chosenMatch) {
-    const rawNum = chosenMatch[1].replace(/reais?/gi, '').trim();
-    const parsed = parseBRLInput(rawNum);
-    if (parsed !== null) {
-      amount = parsed;
-      working = working.replace(chosenMatch[0], ' ');
+  if (installments === null) {
+    const countMatch = working.match(
+      /(?:^|\s)(?:parcelado\s+(?:em\s+)?|em\s+)?(\d{1,2})\s*(?:x|vezes|parcelas?)(?=\s|$)/i
+    );
+    if (countMatch) {
+      const count = Number(countMatch[1]);
+      if (count >= 2 && count <= 60) {
+        installments = count;
+        installmentAmountMode = 'total';
+        working = working.replace(countMatch[0], ' ');
+      }
     }
-  } else {
-    const fallbackMatch = working.match(amountRegex);
-    if (fallbackMatch) {
-      const parsed = parseBRLInput(fallbackMatch[1]);
+  }
+
+  // If installment detected and payment wasn't explicitly specified, default to credit card
+  if (installments !== null && !paymentDetected) {
+    paymentMethod = 'credito';
+  }
+
+  // 4. Extract Monetary Amount (supports "R$ 35", "35", "129,90", "1.250,00", "42.50")
+  if (amount === null) {
+    const amountRegex =
+      /(?:^|\s)(?:r\$\s*)?(\d+(?:[.,]\d{1,3})*(?:[.,]\d{1,2})?)(?:\s*reais?)?(?=\s|$)/i;
+    const amountMatches = Array.from(
+      working.matchAll(
+        /(?:^|\s)((?:r\$\s*)?\d+(?:[.,]\d{1,3})*(?:[.,]\d{1,2})?(?:\s*reais?)?)(?=\s|$)/gi
+      )
+    );
+
+    // Prefer tokens with currency symbol/decimals, otherwise first standalone number (avoid stripping "99" in "99 pop" if another value exists)
+    let chosenMatch: RegExpMatchArray | null = null;
+    if (amountMatches.length === 1) {
+      chosenMatch = amountMatches[0];
+    } else if (amountMatches.length > 1) {
+      chosenMatch =
+        amountMatches.find((m) => /r\$|reais|[.,]/i.test(m[1])) ??
+        amountMatches[0];
+    }
+
+    if (chosenMatch) {
+      const rawNum = chosenMatch[1].replace(/reais?/gi, '').trim();
+      const parsed = parseBRLInput(rawNum);
       if (parsed !== null) {
         amount = parsed;
-        working = working.replace(fallbackMatch[0], ' ');
+        working = working.replace(chosenMatch[0], ' ');
+      }
+    } else {
+      const fallbackMatch = working.match(amountRegex);
+      if (fallbackMatch) {
+        const parsed = parseBRLInput(fallbackMatch[1]);
+        if (parsed !== null) {
+          amount = parsed;
+          working = working.replace(fallbackMatch[0], ' ');
+        }
       }
     }
   }
@@ -472,5 +552,7 @@ export function parseSmartExpenseInput(
     day,
     month,
     dateDetected,
+    installments,
+    installmentAmountMode,
   };
 }

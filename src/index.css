@@ -12,6 +12,13 @@
     background-color: #0a0d12;
     color: #f1f5f9;
     color-scheme: dark;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    overscroll-behavior-y: none;
+    overflow-x: clip;
   }
 
   h1,
@@ -23,9 +30,35 @@
   }
 }
 
+/* Prevent iOS Safari from auto-zooming inputs/selects smaller than 16px on iPhone */
+@media (max-width: 639px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
 .tabular-nums-mono {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
+}
+
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* Subtle dark scrollbars */

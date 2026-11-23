@@ -99,8 +99,8 @@ export function ChartsSection({
       className="grid grid-cols-1 lg:grid-cols-12 gap-5"
     >
       {/* Evolution Bar Chart */}
-      <div className="lg:col-span-7 rounded-xl border border-white/[0.08] bg-[#11161F] p-5 flex flex-col">
-        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-5">
+      <div className="lg:col-span-7 rounded-xl border border-white/[0.08] bg-[#11161F] p-4 sm:p-5 flex flex-col">
+        <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4 sm:mb-5">
           <div>
             <h2 className="text-base font-semibold text-slate-100">
               Evolução mensal
@@ -125,7 +125,7 @@ export function ChartsSection({
           )}
         </div>
 
-        <div className="h-[250px] w-full min-w-0">
+        <div className="h-[215px] sm:h-[250px] w-full min-w-0">
           {!hasTimelineData ? (
             <div className="h-full flex items-center justify-center text-sm text-slate-500">
               Adicione despesas para visualizar o gráfico de evolução mensal.
@@ -212,7 +212,7 @@ export function ChartsSection({
       </div>
 
       {/* Category Distribution Donut + Breakdown */}
-      <div className="lg:col-span-5 rounded-xl border border-white/[0.08] bg-[#11161F] p-5 flex flex-col">
+      <div className="lg:col-span-5 rounded-xl border border-white/[0.08] bg-[#11161F] p-4 sm:p-5 flex flex-col">
         <div className="flex items-baseline justify-between gap-2 mb-4">
           <div>
             <h2 className="text-base font-semibold text-slate-100">

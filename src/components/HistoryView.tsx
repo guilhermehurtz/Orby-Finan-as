@@ -17,6 +17,7 @@ import {
   formatCompactBRL,
   formatMonthLabel,
   formatMonthShort,
+  getCurrentMonthKey,
   isValidMonthKey,
 } from '../utils/finance';
 
@@ -32,8 +33,15 @@ export function HistoryView({
   onOpenMonth,
 }: HistoryViewProps) {
   const [jumpMonth, setJumpMonth] = useState('');
+  const currentMonthKey = getCurrentMonthKey();
 
-  const chronologicalData = [...rows].reverse().map((r) => ({
+  const pastAndCurrentRows = rows.filter(
+    (r) => r.summary.month <= currentMonthKey
+  );
+  const chartSourceRows =
+    pastAndCurrentRows.length > 0 ? pastAndCurrentRows : rows;
+
+  const chronologicalData = [...chartSourceRows].reverse().map((r) => ({
     month: r.summary.month,
     shortLabel: formatMonthShort(r.summary.month),
     fullLabel: formatMonthLabel(r.summary.month),
@@ -53,16 +61,16 @@ export function HistoryView({
       {/* Header + Jump to Month */}
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-50">
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-slate-50">
             Histórico Mensal
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Acompanhe todos os meses salvos e compare sua evolução financeira ao longo do tempo
+          <p className="text-xs sm:text-sm text-slate-400 mt-1">
+            Acompanhe todos os meses salvos e parcelas futuras ao longo do tempo
           </p>
         </div>
 
         <div className="flex items-end gap-2">
-          <div>
+          <div className="flex-1 sm:flex-none">
             <label
               htmlFor="history-jump-month"
               className="block text-xs text-slate-400 mb-1"
@@ -74,14 +82,14 @@ export function HistoryView({
               type="month"
               value={jumpMonth}
               onChange={(e) => setJumpMonth(e.target.value)}
-              className="h-9 rounded-lg border border-white/[0.1] bg-[#11161F] px-3 text-xs text-slate-100 tabular-nums-mono focus:border-emerald-500/60 focus:outline-none"
+              className="w-full sm:w-auto h-10 sm:h-9 rounded-lg border border-white/[0.1] bg-[#11161F] px-3 text-xs text-slate-100 tabular-nums-mono focus:border-emerald-500/60 focus:outline-none"
             />
           </div>
           <button
             type="button"
             onClick={handleJump}
             disabled={!isValidMonthKey(jumpMonth)}
-            className="h-9 px-3.5 rounded-lg border border-white/[0.1] bg-white/[0.05] hover:bg-white/[0.1] disabled:opacity-40 disabled:pointer-events-none text-xs font-medium text-slate-100 transition-colors whitespace-nowrap"
+            className="h-10 sm:h-9 px-3.5 rounded-lg border border-white/[0.1] bg-white/[0.05] hover:bg-white/[0.1] disabled:opacity-40 disabled:pointer-events-none text-xs font-medium text-slate-100 transition-colors whitespace-nowrap"
           >
             Ir para mês
           </button>
@@ -91,47 +99,55 @@ export function HistoryView({
       {/* Historical KPI Strip */}
       <section
         aria-label="Resumo histórico"
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4"
+        className="grid grid-cols-2 xl:grid-cols-4 gap-2.5 sm:gap-4"
       >
-        <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-5">
-          <p className="text-xs font-medium text-slate-400">Total acumulado</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-50 tabular-nums-mono">
+        <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-3.5 sm:p-5">
+          <p className="text-[11px] sm:text-xs font-medium text-slate-400 truncate">
+            Total acumulado
+          </p>
+          <p className="mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold text-slate-50 tabular-nums-mono truncate">
             {formatBRL(historical.grandTotal)}
           </p>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-400 truncate">
             Em {historical.monthsCount}{' '}
-            {historical.monthsCount === 1 ? 'mês registrado' : 'meses registrados'}
+            {historical.monthsCount === 1 ? 'mês' : 'meses'}
           </p>
         </div>
 
-        <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-5">
-          <p className="text-xs font-medium text-slate-400">Média por mês</p>
-          <p className="mt-2 text-2xl font-semibold text-slate-50 tabular-nums-mono">
+        <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-3.5 sm:p-5">
+          <p className="text-[11px] sm:text-xs font-medium text-slate-400 truncate">
+            Média por mês
+          </p>
+          <p className="mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold text-slate-50 tabular-nums-mono truncate">
             {formatBRL(historical.average)}
           </p>
-          <p className="mt-2 text-xs text-slate-400">
-            Referência de equilíbrio mensal
+          <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-400 truncate">
+            Base de equilíbrio
           </p>
         </div>
 
-        <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-5">
-          <p className="text-xs font-medium text-slate-400">Mês mais econômico</p>
-          <p className="mt-2 text-2xl font-semibold text-emerald-400 tabular-nums-mono">
+        <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-3.5 sm:p-5">
+          <p className="text-[11px] sm:text-xs font-medium text-slate-400 truncate">
+            Mais econômico
+          </p>
+          <p className="mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold text-emerald-400 tabular-nums-mono truncate">
             {historical.lowestMonth ? formatBRL(historical.lowestMonth.total) : '—'}
           </p>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-400 truncate">
             {historical.lowestMonth
               ? formatMonthLabel(historical.lowestMonth.month)
               : 'Sem dados'}
           </p>
         </div>
 
-        <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-5">
-          <p className="text-xs font-medium text-slate-400">Mês de maior gasto</p>
-          <p className="mt-2 text-2xl font-semibold text-rose-400 tabular-nums-mono">
+        <div className="rounded-xl border border-white/[0.08] bg-[#11161F] p-3.5 sm:p-5">
+          <p className="text-[11px] sm:text-xs font-medium text-slate-400 truncate">
+            Maior gasto
+          </p>
+          <p className="mt-1.5 sm:mt-2 text-lg sm:text-2xl font-semibold text-rose-400 tabular-nums-mono truncate">
             {historical.highestMonth ? formatBRL(historical.highestMonth.total) : '—'}
           </p>
-          <p className="mt-2 text-xs text-slate-400">
+          <p className="mt-1.5 sm:mt-2 text-[11px] sm:text-xs text-slate-400 truncate">
             {historical.highestMonth
               ? formatMonthLabel(historical.highestMonth.month)
               : 'Sem dados'}
@@ -242,78 +258,148 @@ export function HistoryView({
             Nenhum mês registrado ainda. Adicione despesas na Visão Geral para montar seu histórico.
           </div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse">
-              <thead>
-                <tr className="border-b border-white/[0.07] text-xs font-medium text-slate-400">
-                  <th className="py-3 pl-5 pr-3 font-medium">Mês</th>
-                  <th className="py-3 px-3 font-medium">Itens</th>
-                  <th className="py-3 px-3 font-medium">Fixas / Variáveis</th>
-                  <th className="py-3 px-3 font-medium">Variação vs. anterior</th>
-                  <th className="py-3 px-3 font-medium text-right">Total</th>
-                  <th className="py-3 pl-3 pr-5 font-medium text-right">Ação</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/[0.05] text-sm">
-                {rows.map(({ summary, comparison }) => {
-                  const isSaving = comparison.status === 'saving';
-                  const isIncrease = comparison.status === 'increase';
-                  return (
-                    <tr
-                      key={summary.month}
-                      className="hover:bg-white/[0.025] transition-colors"
+          <>
+            {/* Desktop Table */}
+            <div className="hidden md:block overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="border-b border-white/[0.07] text-xs font-medium text-slate-400">
+                    <th className="py-3 pl-5 pr-3 font-medium">Mês</th>
+                    <th className="py-3 px-3 font-medium">Itens</th>
+                    <th className="py-3 px-3 font-medium">Fixas / Variáveis</th>
+                    <th className="py-3 px-3 font-medium">Variação vs. anterior</th>
+                    <th className="py-3 px-3 font-medium text-right">Total</th>
+                    <th className="py-3 pl-3 pr-5 font-medium text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/[0.05] text-sm">
+                  {rows.map(({ summary, comparison }) => {
+                    const isSaving = comparison.status === 'saving';
+                    const isIncrease = comparison.status === 'increase';
+                    const isFuture = summary.month > currentMonthKey;
+                    return (
+                      <tr
+                        key={summary.month}
+                        className="hover:bg-white/[0.025] transition-colors"
+                      >
+                        <td className="py-3.5 pl-5 pr-3 font-medium text-slate-100 whitespace-nowrap">
+                          <span className="inline-flex items-center gap-2">
+                            <span>{formatMonthLabel(summary.month)}</span>
+                            {isFuture && (
+                              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-500/12 border border-sky-500/25 text-sky-300">
+                                Futuro
+                              </span>
+                            )}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-3 text-xs text-slate-400 tabular-nums-mono whitespace-nowrap">
+                          {summary.count}
+                        </td>
+                        <td className="py-3.5 px-3 text-xs text-slate-400 whitespace-nowrap">
+                          <span className="tabular-nums-mono text-slate-300">
+                            {formatBRL(summary.fixedTotal)}
+                          </span>
+                          <span aria-hidden="true"> / </span>
+                          <span className="tabular-nums-mono text-slate-400">
+                            {formatBRL(summary.variableTotal)}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-3 text-xs whitespace-nowrap">
+                          {comparison.status === 'no_baseline' ? (
+                            <span className="text-slate-500">Sem base anterior</span>
+                          ) : isSaving ? (
+                            <span className="inline-flex items-center gap-1 text-emerald-400 tabular-nums-mono">
+                              <ArrowDownRight className="h-3.5 w-3.5" aria-hidden="true" />
+                              Economia de {formatBRL(Math.abs(comparison.difference))}
+                            </span>
+                          ) : isIncrease ? (
+                            <span className="inline-flex items-center gap-1 text-rose-400 tabular-nums-mono">
+                              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
+                              +{formatBRL(Math.abs(comparison.difference))}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">Estável (0%)</span>
+                          )}
+                        </td>
+                        <td className="py-3.5 px-3 text-right font-semibold text-slate-100 tabular-nums-mono whitespace-nowrap">
+                          {formatBRL(summary.total)}
+                        </td>
+                        <td className="py-3.5 pl-3 pr-5 text-right whitespace-nowrap">
+                          <button
+                            type="button"
+                            onClick={() => onOpenMonth(summary.month)}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
+                          >
+                            <span>Abrir</span>
+                            <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile Month Cards (iPhone 14) */}
+            <ul className="md:hidden divide-y divide-white/[0.06]">
+              {rows.map(({ summary, comparison }) => {
+                const isSaving = comparison.status === 'saving';
+                const isIncrease = comparison.status === 'increase';
+                const isFuture = summary.month > currentMonthKey;
+                return (
+                  <li key={summary.month}>
+                    <button
+                      type="button"
+                      onClick={() => onOpenMonth(summary.month)}
+                      className="w-full px-4 py-3.5 flex items-center justify-between gap-3 text-left hover:bg-white/[0.03] active:bg-white/[0.05] transition-colors"
                     >
-                      <td className="py-3.5 pl-5 pr-3 font-medium text-slate-100 whitespace-nowrap">
-                        {formatMonthLabel(summary.month)}
-                      </td>
-                      <td className="py-3.5 px-3 text-xs text-slate-400 tabular-nums-mono whitespace-nowrap">
-                        {summary.count}
-                      </td>
-                      <td className="py-3.5 px-3 text-xs text-slate-400 whitespace-nowrap">
-                        <span className="tabular-nums-mono text-slate-300">
-                          {formatBRL(summary.fixedTotal)}
-                        </span>
-                        <span aria-hidden="true"> / </span>
-                        <span className="tabular-nums-mono text-slate-400">
-                          {formatBRL(summary.variableTotal)}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-3 text-xs whitespace-nowrap">
-                        {comparison.status === 'no_baseline' ? (
-                          <span className="text-slate-500">Sem base anterior</span>
-                        ) : isSaving ? (
-                          <span className="inline-flex items-center gap-1 text-emerald-400 tabular-nums-mono">
-                            <ArrowDownRight className="h-3.5 w-3.5" aria-hidden="true" />
-                            Economia de {formatBRL(Math.abs(comparison.difference))}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold text-slate-100">
+                            {formatMonthLabel(summary.month)}
+                          </p>
+                          {isFuture && (
+                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-sky-500/12 border border-sky-500/25 text-sky-300">
+                              Futuro
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-400">
+                          <span className="tabular-nums-mono">
+                            {summary.count} {summary.count === 1 ? 'item' : 'itens'}
                           </span>
-                        ) : isIncrease ? (
-                          <span className="inline-flex items-center gap-1 text-rose-400 tabular-nums-mono">
-                            <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
-                            +{formatBRL(Math.abs(comparison.difference))}
-                          </span>
-                        ) : (
-                          <span className="text-slate-400">Estável (0%)</span>
-                        )}
-                      </td>
-                      <td className="py-3.5 px-3 text-right font-semibold text-slate-100 tabular-nums-mono whitespace-nowrap">
-                        {formatBRL(summary.total)}
-                      </td>
-                      <td className="py-3.5 pl-3 pr-5 text-right whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => onOpenMonth(summary.month)}
-                          className="inline-flex items-center gap-1 text-xs font-medium text-emerald-400 hover:text-emerald-300 transition-colors"
-                        >
-                          <span>Abrir</span>
-                          <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                          <span aria-hidden="true">·</span>
+                          {comparison.status === 'no_baseline' ? (
+                            <span className="text-slate-500">Sem base anterior</span>
+                          ) : isSaving ? (
+                            <span className="inline-flex items-center gap-0.5 text-emerald-400 tabular-nums-mono">
+                              <ArrowDownRight className="h-3 w-3" aria-hidden="true" />
+                              -{formatBRL(Math.abs(comparison.difference))}
+                            </span>
+                          ) : isIncrease ? (
+                            <span className="inline-flex items-center gap-0.5 text-rose-400 tabular-nums-mono">
+                              <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
+                              +{formatBRL(Math.abs(comparison.difference))}
+                            </span>
+                          ) : (
+                            <span>Estável</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className="text-sm font-semibold text-slate-100 tabular-nums-mono">
+                          {formatBRL(summary.total)}
+                        </span>
+                        <ArrowRight className="h-4 w-4 text-emerald-400" aria-hidden="true" />
+                      </div>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          </>
         )}
       </section>
     </div>
