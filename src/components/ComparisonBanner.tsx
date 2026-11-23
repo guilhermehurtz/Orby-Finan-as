@@ -42,7 +42,7 @@ export function ComparisonBanner({
                 Sem base em {prevName} para comparar variação mensal
               </p>
               <p className="text-xs text-slate-400 mt-0.5">
-                Quando houver despesas em meses consecutivos, o Fluxo calcula automaticamente sua economia ou aumento.
+                Quando houver despesas em meses consecutivos, o orby calcula automaticamente sua economia ou aumento.
               </p>
             </div>
           </div>

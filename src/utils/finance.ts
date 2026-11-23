@@ -7,6 +7,9 @@ import {
   FinanceStoreData,
   MonthComparison,
   MonthSummary,
+  PaymentBreakdownItem,
+  PaymentMethod,
+  PaymentMethodMeta,
 } from '../types/finance';
 
 export const CATEGORIES: CategoryMeta[] = [
@@ -28,8 +31,25 @@ export const CATEGORY_MAP: Record<ExpenseCategory, CategoryMeta> = CATEGORIES.re
   {} as Record<ExpenseCategory, CategoryMeta>
 );
 
+export const PAYMENT_METHODS: PaymentMethodMeta[] = [
+  { id: 'pix', label: 'Pix', shortLabel: 'Pix', color: '#2DD4BF' },
+  { id: 'credito', label: 'Crédito', shortLabel: 'Crédito', color: '#38BDF8' },
+  { id: 'debito', label: 'Débito', shortLabel: 'Débito', color: '#818CF8' },
+  { id: 'dinheiro', label: 'Dinheiro', shortLabel: 'Dinheiro', color: '#34D399' },
+];
+
+export const PAYMENT_METHOD_MAP: Record<PaymentMethod, PaymentMethodMeta> =
+  PAYMENT_METHODS.reduce(
+    (acc, item) => {
+      acc[item.id] = item;
+      return acc;
+    },
+    {} as Record<PaymentMethod, PaymentMethodMeta>
+  );
+
 const VALID_CATEGORIES = new Set<string>(CATEGORIES.map((c) => c.id));
 const VALID_TYPES = new Set<string>(['fixa', 'variavel']);
+const VALID_PAYMENT_METHODS = new Set<string>(PAYMENT_METHODS.map((p) => p.id));
 
 const MONTH_NAMES = [
   'Janeiro',
@@ -70,7 +90,6 @@ const brlFormatter = new Intl.NumberFormat('pt-BR', {
 
 export function formatBRL(value: number): string {
   const safe = Number.isFinite(value) ? value : 0;
-  // Normalize non-breaking space from Intl to standard space for clean rendering & assertions
   return brlFormatter.format(safe).replace(/\u00A0/g, ' ');
 }
 
@@ -88,7 +107,6 @@ export function parseBRLInput(raw: string): number | null {
   const cleaned = raw.replace(/R\$/gi, '').replace(/\s+/g, '').trim();
   if (!cleaned) return null;
 
-  // Reject characters other than digits, comma, and dot
   if (!/^[0-9.,]+$/.test(cleaned)) return null;
 
   let normalized = cleaned;
@@ -96,21 +114,16 @@ export function parseBRLInput(raw: string): number | null {
   const hasDot = cleaned.includes('.');
 
   if (hasComma && hasDot) {
-    // Brazilian format: 1.250,50 -> dots are thousands, comma is decimal
     if (cleaned.lastIndexOf(',') > cleaned.lastIndexOf('.')) {
       normalized = cleaned.replace(/\./g, '').replace(',', '.');
     } else {
-      // US format fallback: 1,250.50
       normalized = cleaned.replace(/,/g, '');
     }
   } else if (hasComma) {
-    // Only commas: treat last comma as decimal separator
     const parts = cleaned.split(',');
     if (parts.length > 2) return null;
     normalized = `${parts[0]}.${parts[1]}`;
   } else if (hasDot) {
-    // Only dots: if 1.250 (3 digits after dot and single dot with leading digits), could be thousands or decimal.
-    // Standard input like 89.90 has 1-2 decimals; multiple dots like 1.200.000 are thousands.
     const parts = cleaned.split('.');
     if (parts.length > 2) {
       normalized = cleaned.replace(/\./g, '');
@@ -138,7 +151,7 @@ export function isValidMonthKey(monthKey: string): boolean {
 export function shiftMonth(monthKey: string, delta: number): string {
   const [yearStr, monthStr] = monthKey.split('-');
   const year = Number(yearStr);
-  const monthIndex = Number(monthStr) - 1; // 0..11
+  const monthIndex = Number(monthStr) - 1;
   const totalMonths = year * 12 + monthIndex + delta;
   const nextYear = Math.floor(totalMonths / 12);
   const nextMonth = ((totalMonths % 12) + 12) % 12;
@@ -200,6 +213,48 @@ export function getCategoryBreakdown(monthExpenses: Expense[]): CategoryBreakdow
   }
 
   return items.sort((a, b) => b.total - a.total);
+}
+
+export function getPaymentMethodBreakdown(
+  monthExpenses: Expense[]
+): PaymentBreakdownItem[] {
+  const totalAll = roundCurrency(monthExpenses.reduce((sum, e) => sum + e.amount, 0));
+  const grouped = new Map<
+    PaymentMethod,
+    { total: number; fixedTotal: number; variableTotal: number; count: number }
+  >();
+
+  for (const pm of PAYMENT_METHODS) {
+    grouped.set(pm.id, { total: 0, fixedTotal: 0, variableTotal: 0, count: 0 });
+  }
+
+  for (const exp of monthExpenses) {
+    const method: PaymentMethod = VALID_PAYMENT_METHODS.has(exp.paymentMethod)
+      ? exp.paymentMethod
+      : 'pix';
+    const current = grouped.get(method)!;
+    current.total = roundCurrency(current.total + exp.amount);
+    if (exp.type === 'fixa') {
+      current.fixedTotal = roundCurrency(current.fixedTotal + exp.amount);
+    } else {
+      current.variableTotal = roundCurrency(current.variableTotal + exp.amount);
+    }
+    current.count += 1;
+  }
+
+  return PAYMENT_METHODS.map((pm) => {
+    const stats = grouped.get(pm.id)!;
+    return {
+      method: pm.id,
+      label: pm.label,
+      color: pm.color,
+      total: stats.total,
+      fixedTotal: stats.fixedTotal,
+      variableTotal: stats.variableTotal,
+      count: stats.count,
+      share: totalAll > 0 ? Math.round((stats.total / totalAll) * 1000) / 10 : 0,
+    };
+  });
 }
 
 export function getMonthSummary(expenses: Expense[], monthKey: string): MonthSummary {
@@ -341,10 +396,8 @@ export function getTimelineSeries(
   const monthSet = new Set<string>(recordedMonths);
   monthSet.add(selectedMonthKey);
 
-  // Sort chronologically and keep up to windowSize months centered/anchored around latest or selected
   let months = Array.from(monthSet).sort();
 
-  // If fewer than 2 months exist, include previous month so user sees comparative context
   if (months.length === 1) {
     months = [shiftMonth(selectedMonthKey, -1), selectedMonthKey];
   }
@@ -416,6 +469,7 @@ export function cloneFixedExpensesToMonth(
       amount: item.amount,
       category: item.category,
       type: 'fixa',
+      paymentMethod: item.paymentMethod ?? 'pix',
       month: targetMonth,
       day: item.day,
       note: item.note,
@@ -466,6 +520,13 @@ export function validateBackupPayload(
         ? (item.type as ExpenseType)
         : 'variavel';
 
+    // Backward-compatible default for pre-paymentMethod saved records
+    const paymentMethod: PaymentMethod =
+      typeof item.paymentMethod === 'string' &&
+      VALID_PAYMENT_METHODS.has(item.paymentMethod)
+        ? (item.paymentMethod as PaymentMethod)
+        : 'pix';
+
     const rawDay = typeof item.day === 'number' ? Math.round(item.day) : 1;
     const day = Math.min(31, Math.max(1, Number.isFinite(rawDay) ? rawDay : 1));
 
@@ -478,6 +539,7 @@ export function validateBackupPayload(
       amount,
       category,
       type,
+      paymentMethod,
       month,
       day,
       note: typeof item.note === 'string' ? item.note.trim() || undefined : undefined,

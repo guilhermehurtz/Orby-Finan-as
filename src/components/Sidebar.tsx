@@ -1,6 +1,6 @@
 import {
-  BarChart3,
   CalendarRange,
+  CreditCard,
   Database,
   LayoutDashboard,
   X,
@@ -22,6 +22,7 @@ interface SidebarProps {
 
 const NAV_ITEMS: { id: ActiveTab; label: string; icon: typeof LayoutDashboard }[] = [
   { id: 'overview', label: 'Visão Geral', icon: LayoutDashboard },
+  { id: 'payments', label: 'Pagamentos', icon: CreditCard },
   { id: 'history', label: 'Histórico Mensal', icon: CalendarRange },
   { id: 'data', label: 'Dados e Backup', icon: Database },
 ];
@@ -45,21 +46,26 @@ export function Sidebar({
 
   const navContent = (
     <div className="flex h-full flex-col bg-[#0D1117] border-r border-white/[0.07]">
-      {/* Brand Header */}
-      <div className="flex items-center justify-between px-6 h-16 border-b border-white/[0.07] shrink-0">
+      {/* Official Orby Brand Header */}
+      <div className="flex items-center justify-between px-5 h-16 border-b border-white/[0.07] shrink-0">
         <button
           type="button"
           onClick={() => {
             onSelectTab('overview');
             onCloseMobile();
           }}
-          className="flex items-center gap-2.5 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded-md"
+          className="flex items-center gap-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 rounded-lg"
         >
-          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600 text-[#04130D] shadow-sm">
-            <BarChart3 className="h-4 w-4 stroke-[2.5]" aria-hidden="true" />
+          <span className="h-9 w-9 rounded-[10px] overflow-hidden ring-1 ring-white/15 shrink-0 bg-[#0B1F4D] shadow-sm">
+            <img
+              src="/assets/aistudio/favicon_2deb01cd.jpg"
+              alt="Logo orby"
+              referrerPolicy="no-referrer"
+              className="h-full w-full object-cover scale-[1.26]"
+            />
           </span>
-          <span className="text-lg font-bold tracking-tight text-slate-50 font-[var(--font-display)] whitespace-nowrap">
-            Fluxo
+          <span className="text-[21px] font-bold tracking-tight text-slate-50 font-[var(--font-display)] lowercase leading-none whitespace-nowrap">
+            orby
           </span>
         </button>
 
@@ -122,14 +128,17 @@ export function Sidebar({
           <ul className="space-y-1">
             {recentMonths.slice(0, 8).map((item) => {
               const isSelected =
-                activeTab === 'overview' && item.month === selectedMonth;
+                (activeTab === 'overview' || activeTab === 'payments') &&
+                item.month === selectedMonth;
               return (
                 <li key={item.month}>
                   <button
                     type="button"
                     onClick={() => {
                       onSelectMonth(item.month);
-                      onSelectTab('overview');
+                      if (activeTab !== 'payments') {
+                        onSelectTab('overview');
+                      }
                       onCloseMobile();
                     }}
                     className={`w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg text-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400 ${
@@ -191,12 +200,10 @@ export function Sidebar({
 
   return (
     <>
-      {/* Desktop Rail */}
       <aside className="hidden lg:block w-64 shrink-0 h-screen sticky top-0">
         {navContent}
       </aside>
 
-      {/* Mobile Drawer */}
       {mobileOpen && (
         <div
           className="fixed inset-0 z-50 lg:hidden flex"

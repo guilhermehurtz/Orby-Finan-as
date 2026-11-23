@@ -10,12 +10,15 @@ export type ExpenseCategory =
 
 export type ExpenseType = 'fixa' | 'variavel';
 
+export type PaymentMethod = 'pix' | 'credito' | 'debito' | 'dinheiro';
+
 export interface Expense {
   id: string;
   name: string;
   amount: number; // Positive BRL value
   category: ExpenseCategory;
   type: ExpenseType;
+  paymentMethod: PaymentMethod;
   month: string; // Format: YYYY-MM
   day: number; // 1..31
   note?: string;
@@ -32,6 +35,13 @@ export interface FinanceStoreData {
 export interface CategoryMeta {
   id: ExpenseCategory;
   label: string;
+  color: string;
+}
+
+export interface PaymentMethodMeta {
+  id: PaymentMethod;
+  label: string;
+  shortLabel: string;
   color: string;
 }
 
@@ -68,4 +78,15 @@ export interface CategoryBreakdownItem {
   share: number; // 0..100
 }
 
-export type ActiveTab = 'overview' | 'history' | 'data';
+export interface PaymentBreakdownItem {
+  method: PaymentMethod;
+  label: string;
+  color: string;
+  total: number;
+  fixedTotal: number;
+  variableTotal: number;
+  count: number;
+  share: number; // 0..100
+}
+
+export type ActiveTab = 'overview' | 'payments' | 'history' | 'data';

@@ -9,6 +9,7 @@ import {
   getHistoricalStats,
   getMonthComparison,
   getMonthSummary,
+  getPaymentMethodBreakdown,
   getTimelineSeries,
   parseBRLInput,
   shiftMonth,
@@ -23,6 +24,7 @@ const sampleExpenses: Expense[] = [
     amount: 1500,
     category: 'moradia',
     type: 'fixa',
+    paymentMethod: 'pix',
     month: '2026-10',
     day: 5,
     createdAt: '2026-10-05T00:00:00Z',
@@ -33,6 +35,7 @@ const sampleExpenses: Expense[] = [
     amount: 500,
     category: 'alimentacao',
     type: 'variavel',
+    paymentMethod: 'debito',
     month: '2026-10',
     day: 12,
     createdAt: '2026-10-12T00:00:00Z',
@@ -43,6 +46,7 @@ const sampleExpenses: Expense[] = [
     amount: 1500,
     category: 'moradia',
     type: 'fixa',
+    paymentMethod: 'pix',
     month: '2026-11',
     day: 5,
     createdAt: '2026-11-05T00:00:00Z',
@@ -53,6 +57,7 @@ const sampleExpenses: Expense[] = [
     amount: 300,
     category: 'alimentacao',
     type: 'variavel',
+    paymentMethod: 'credito',
     month: '2026-11',
     day: 10,
     createdAt: '2026-11-10T00:00:00Z',
@@ -119,7 +124,9 @@ test('getHistoricalStats computes average across months with expenses', () => {
 });
 
 test('getCategoryBreakdown sums and sorts categories descending', () => {
-  const breakdown = getCategoryBreakdown(sampleExpenses.filter((e) => e.month === '2026-11'));
+  const breakdown = getCategoryBreakdown(
+    sampleExpenses.filter((e) => e.month === '2026-11')
+  );
   assert.equal(breakdown.length, 2);
   assert.equal(breakdown[0].category, 'moradia');
   assert.equal(breakdown[0].total, 1500);
@@ -127,7 +134,23 @@ test('getCategoryBreakdown sums and sorts categories descending', () => {
   assert.equal(breakdown[1].total, 300);
 });
 
-test('cloneFixedExpensesToMonth copies only fixed expenses and avoids duplicates', () => {
+test('getPaymentMethodBreakdown summarizes all four payment methods with shares', () => {
+  const breakdown = getPaymentMethodBreakdown(
+    sampleExpenses.filter((e) => e.month === '2026-11')
+  );
+  assert.equal(breakdown.length, 4);
+  const pix = breakdown.find((b) => b.method === 'pix')!;
+  const credito = breakdown.find((b) => b.method === 'credito')!;
+  const debito = breakdown.find((b) => b.method === 'debito')!;
+  const dinheiro = breakdown.find((b) => b.method === 'dinheiro')!;
+  assert.equal(pix.total, 1500);
+  assert.equal(pix.count, 1);
+  assert.equal(credito.total, 300);
+  assert.equal(debito.total, 0);
+  assert.equal(dinheiro.total, 0);
+});
+
+test('cloneFixedExpensesToMonth copies fixed expenses preserving paymentMethod', () => {
   let seq = 1;
   const cloned = cloneFixedExpensesToMonth(
     sampleExpenses,
@@ -137,10 +160,10 @@ test('cloneFixedExpensesToMonth copies only fixed expenses and avoids duplicates
   );
   assert.equal(cloned.length, 1);
   assert.equal(cloned[0].name, 'Aluguel');
+  assert.equal(cloned[0].paymentMethod, 'pix');
   assert.equal(cloned[0].month, '2026-12');
   assert.equal(cloned[0].id, 'new-1');
 
-  // Second clone should skip already-existing fixed expense
   const combined = [...sampleExpenses, ...cloned];
   const clonedAgain = cloneFixedExpensesToMonth(
     combined,
@@ -160,18 +183,33 @@ test('getTimelineSeries generates chronological window including selected month'
   assert.equal(series[1].isSelected, true);
 });
 
-test('validateBackupPayload accepts valid backup and rejects malformed data', () => {
-  const valid = validateBackupPayload({
+test('validateBackupPayload migrates legacy expenses without paymentMethod safely', () => {
+  const legacyPayload = {
     version: 1,
-    expenses: sampleExpenses,
+    expenses: [
+      {
+        id: 'old-1',
+        name: 'Aluguel Antigo',
+        amount: 1200,
+        category: 'moradia',
+        type: 'fixa',
+        month: '2026-09',
+        day: 5,
+        createdAt: '2026-09-05T00:00:00Z',
+      },
+    ],
     monthlyGoal: 3500,
-  });
+  };
+  const valid = validateBackupPayload(legacyPayload);
   assert.equal(valid.ok, true);
   if (valid.ok) {
-    assert.equal(valid.data.expenses.length, 4);
-    assert.equal(valid.data.monthlyGoal, 3500);
+    assert.equal(valid.data.expenses.length, 1);
+    assert.equal(valid.data.expenses[0].paymentMethod, 'pix');
   }
 
-  const invalid = validateBackupPayload({ version: 1, expenses: [{ name: '', amount: -10 }] });
+  const invalid = validateBackupPayload({
+    version: 1,
+    expenses: [{ name: '', amount: -10 }],
+  });
   assert.equal(invalid.ok, false);
 });

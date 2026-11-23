@@ -74,7 +74,7 @@ export function DataBackupView({
     const today = new Date().toISOString().slice(0, 10);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `fluxo-backup-${today}.json`;
+    link.download = `orby-backup-${today}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -122,13 +122,23 @@ export function DataBackupView({
 
   return (
     <div className="space-y-6 max-w-4xl">
-      <div>
-        <h1 className="text-2xl font-bold tracking-tight text-slate-50">
-          Dados e Backup Local
-        </h1>
-        <p className="text-sm text-slate-400 mt-1">
-          Seus registros ficam salvos automaticamente no navegador (localStorage) — ideal para hospedar de graça como site estático no Netlify sem precisar de servidor ou login.
-        </p>
+      <div className="flex items-center gap-4">
+        <div className="h-16 w-16 rounded-2xl overflow-hidden ring-1 ring-white/15 bg-[#EAF4FF] shrink-0 shadow-md">
+          <img
+            src="/assets/aistudio/Orby_app_icon_and_logo_35b50344_2K_8e4087db.jpg"
+            alt="Logo oficial orby"
+            referrerPolicy="no-referrer"
+            className="h-full w-full object-cover scale-[1.06]"
+          />
+        </div>
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight text-slate-50">
+            Dados e Backup Local
+          </h1>
+          <p className="text-sm text-slate-400 mt-1">
+            Seus registros do orby ficam salvos automaticamente no navegador (localStorage) — ideal para hospedar de graça no Netlify sem servidor ou login.
+          </p>
+        </div>
       </div>
 
       {/* Storage Overview */}

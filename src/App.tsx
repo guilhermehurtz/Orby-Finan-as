@@ -9,8 +9,8 @@ import {
   ActiveTab,
   Expense,
   ExpenseCategory,
-  ExpenseType,
   FinanceStoreData,
+  PaymentMethod,
 } from './types/finance';
 import {
   cloneFixedExpensesToMonth,
@@ -23,6 +23,7 @@ import {
   getMonthComparison,
   getMonthExpenses,
   getMonthSummary,
+  getPaymentMethodBreakdown,
   getTimelineSeries,
   shiftMonth,
 } from './utils/finance';
@@ -36,8 +37,9 @@ import { Sidebar } from './components/Sidebar';
 import { ComparisonBanner } from './components/ComparisonBanner';
 import { KpiStrip } from './components/KpiStrip';
 import { ChartsSection } from './components/ChartsSection';
-import { ExpenseLedger } from './components/ExpenseLedger';
+import { ExpenseLedger, QuickAddPayload } from './components/ExpenseLedger';
 import { ExpenseFormModal, ExpenseFormValues } from './components/ExpenseFormModal';
+import { PaymentsView } from './components/PaymentsView';
 import { HistoryView } from './components/HistoryView';
 import { DataBackupView } from './components/DataBackupView';
 
@@ -55,8 +57,10 @@ export default function App() {
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
+  const [modalDefaultPayment, setModalDefaultPayment] =
+    useState<PaymentMethod>('pix');
 
-  // Transient user feedback banner (e.g., cloned fixed expenses)
+  // Transient user feedback banner
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
   // Persist to localStorage whenever store changes
@@ -114,6 +118,11 @@ export default function App() {
     [monthExpenses]
   );
 
+  const paymentBreakdown = useMemo(
+    () => getPaymentMethodBreakdown(monthExpenses),
+    [monthExpenses]
+  );
+
   const timeline = useMemo(
     () => getTimelineSeries(store.expenses, selectedMonth, 6),
     [store.expenses, selectedMonth]
@@ -143,6 +152,7 @@ export default function App() {
                   amount: values.amount,
                   category: values.category,
                   type: values.type,
+                  paymentMethod: values.paymentMethod,
                   month: values.month,
                   day: values.day,
                   note: values.note,
@@ -158,6 +168,7 @@ export default function App() {
         amount: values.amount,
         category: values.category,
         type: values.type,
+        paymentMethod: values.paymentMethod,
         month: values.month,
         day: values.day,
         note: values.note,
@@ -174,23 +185,22 @@ export default function App() {
     if (values.month !== selectedMonth) {
       setSelectedMonth(values.month);
     }
-    setActiveTab('overview');
+    if (activeTab !== 'payments') {
+      setActiveTab('overview');
+    }
   };
 
-  const handleQuickAdd = (payload: {
-    name: string;
-    amount: number;
-    category: ExpenseCategory;
-    type: ExpenseType;
-  }) => {
+  const handleQuickAdd = (payload: QuickAddPayload) => {
+    const targetMonth = payload.month ?? selectedMonth;
     const created: Expense = {
       id: generateExpenseId(),
       name: payload.name,
       amount: payload.amount,
       category: payload.category,
       type: payload.type,
-      month: selectedMonth,
-      day: new Date().getDate(),
+      paymentMethod: payload.paymentMethod,
+      month: targetMonth,
+      day: payload.day ?? new Date().getDate(),
       createdAt: new Date().toISOString(),
     };
 
@@ -199,6 +209,13 @@ export default function App() {
       seeded: false,
       expenses: [created, ...prev.expenses],
     }));
+
+    if (targetMonth !== selectedMonth) {
+      setSelectedMonth(targetMonth);
+      setFeedbackNotice(
+        `Despesa "${payload.name}" adicionada em ${formatMonthLabel(targetMonth)}.`
+      );
+    }
   };
 
   const handleDeleteExpense = (id: string) => {
@@ -235,8 +252,9 @@ export default function App() {
     );
   };
 
-  const handleOpenNewModal = () => {
+  const handleOpenNewModal = (defaultMethod: PaymentMethod = 'pix') => {
     setEditingExpense(null);
+    setModalDefaultPayment(defaultMethod);
     setModalOpen(true);
   };
 
@@ -244,6 +262,8 @@ export default function App() {
     setEditingExpense(expense);
     setModalOpen(true);
   };
+
+  const showMonthSwitcher = activeTab === 'overview' || activeTab === 'payments';
 
   return (
     <div className="min-h-screen bg-[#0A0D12] text-slate-100 flex">
@@ -267,8 +287,8 @@ export default function App() {
 
       <div className="flex-1 min-w-0 flex flex-col relative z-10">
         {/* Top Workspace Header */}
-        <header className="sticky top-0 z-30 h-16 px-4 sm:px-6 lg:px-8 border-b border-white/[0.07] bg-[#0A0D12]/90 backdrop-blur-md flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="sticky top-0 z-30 h-16 px-4 sm:px-6 lg:px-8 border-b border-white/[0.07] bg-[#0A0D12]/90 backdrop-blur-md flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
             <button
               type="button"
               onClick={() => setMobileMenuOpen(true)}
@@ -278,20 +298,29 @@ export default function App() {
               <Menu className="h-5 w-5" aria-hidden="true" />
             </button>
 
-            {activeTab === 'overview' ? (
-              <div className="flex items-center gap-1.5 sm:gap-2">
+            <span className="lg:hidden h-7 w-7 rounded-lg overflow-hidden ring-1 ring-white/15 shrink-0 bg-[#0B1F4D]">
+              <img
+                src="/assets/aistudio/favicon_2deb01cd.jpg"
+                alt="orby"
+                referrerPolicy="no-referrer"
+                className="h-full w-full object-cover scale-[1.26]"
+              />
+            </span>
+
+            {showMonthSwitcher ? (
+              <div className="flex items-center gap-1 sm:gap-2">
                 <button
                   type="button"
                   onClick={() => setSelectedMonth((m) => shiftMonth(m, -1))}
                   aria-label="Mês anterior"
-                  className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/[0.08] bg-[#11161F] text-slate-300 hover:text-slate-100 hover:bg-white/[0.07] transition-colors"
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/[0.08] bg-[#11161F] text-slate-300 hover:text-slate-100 hover:bg-white/[0.07] transition-colors"
                 >
                   <ChevronLeft className="h-4 w-4" aria-hidden="true" />
                 </button>
 
                 <span
                   data-testid="active-month-label"
-                  className="px-1.5 sm:px-3 text-sm sm:text-base font-semibold text-slate-100 font-[var(--font-display)] whitespace-nowrap"
+                  className="px-1 sm:px-3 text-sm sm:text-base font-semibold text-slate-100 font-[var(--font-display)] whitespace-nowrap"
                 >
                   <span className="sm:hidden">{formatMonthShort(selectedMonth)}</span>
                   <span className="hidden sm:inline">
@@ -317,7 +346,7 @@ export default function App() {
 
           <button
             type="button"
-            onClick={handleOpenNewModal}
+            onClick={() => handleOpenNewModal()}
             aria-label="Nova despesa"
             className="inline-flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-400 to-teal-400 hover:from-emerald-300 hover:to-teal-300 text-[#04130D] text-xs sm:text-sm font-semibold transition-all shadow-sm whitespace-nowrap shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-300"
           >
@@ -401,12 +430,25 @@ export default function App() {
                 selectedCategory={selectedCategory}
                 onSelectCategory={setSelectedCategory}
                 onQuickAdd={handleQuickAdd}
-                onOpenNewModal={handleOpenNewModal}
+                onOpenNewModal={() => handleOpenNewModal()}
                 onEdit={handleOpenEditModal}
                 onDelete={handleDeleteExpense}
                 onClonePreviousFixed={handleClonePreviousFixed}
               />
             </div>
+          )}
+
+          {activeTab === 'payments' && (
+            <PaymentsView
+              selectedMonth={selectedMonth}
+              monthExpenses={monthExpenses}
+              paymentBreakdown={paymentBreakdown}
+              onOpenNewModal={(defaultMethod) =>
+                handleOpenNewModal(defaultMethod)
+              }
+              onEdit={handleOpenEditModal}
+              onDelete={handleDeleteExpense}
+            />
           )}
 
           {activeTab === 'history' && (
@@ -457,6 +499,7 @@ export default function App() {
       <ExpenseFormModal
         isOpen={modalOpen}
         defaultMonth={selectedMonth}
+        defaultPaymentMethod={modalDefaultPayment}
         editingExpense={editingExpense}
         onClose={() => {
           setModalOpen(false);

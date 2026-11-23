@@ -1,13 +1,24 @@
 import { FormEvent, useEffect, useRef, useState } from 'react';
 import { X } from 'lucide-react';
-import { Expense, ExpenseCategory, ExpenseType } from '../types/finance';
-import { CATEGORIES, isValidMonthKey, parseBRLInput } from '../utils/finance';
+import {
+  Expense,
+  ExpenseCategory,
+  ExpenseType,
+  PaymentMethod,
+} from '../types/finance';
+import {
+  CATEGORIES,
+  PAYMENT_METHODS,
+  isValidMonthKey,
+  parseBRLInput,
+} from '../utils/finance';
 
 export interface ExpenseFormValues {
   name: string;
   amount: number;
   category: ExpenseCategory;
   type: ExpenseType;
+  paymentMethod: PaymentMethod;
   month: string;
   day: number;
   note?: string;
@@ -16,6 +27,7 @@ export interface ExpenseFormValues {
 interface ExpenseFormModalProps {
   isOpen: boolean;
   defaultMonth: string;
+  defaultPaymentMethod?: PaymentMethod;
   editingExpense: Expense | null;
   onClose: () => void;
   onSubmit: (values: ExpenseFormValues, existingId?: string) => void;
@@ -24,6 +36,7 @@ interface ExpenseFormModalProps {
 export function ExpenseFormModal({
   isOpen,
   defaultMonth,
+  defaultPaymentMethod = 'pix',
   editingExpense,
   onClose,
   onSubmit,
@@ -34,6 +47,7 @@ export function ExpenseFormModal({
   const [amountText, setAmountText] = useState('');
   const [category, setCategory] = useState<ExpenseCategory>('alimentacao');
   const [type, setType] = useState<ExpenseType>('variavel');
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('pix');
   const [month, setMonth] = useState(defaultMonth);
   const [dayText, setDayText] = useState(String(new Date().getDate()));
   const [note, setNote] = useState('');
@@ -46,6 +60,7 @@ export function ExpenseFormModal({
       setAmountText(editingExpense.amount.toFixed(2).replace('.', ','));
       setCategory(editingExpense.category);
       setType(editingExpense.type);
+      setPaymentMethod(editingExpense.paymentMethod ?? 'pix');
       setMonth(editingExpense.month);
       setDayText(String(editingExpense.day));
       setNote(editingExpense.note ?? '');
@@ -54,6 +69,7 @@ export function ExpenseFormModal({
       setAmountText('');
       setCategory('alimentacao');
       setType('variavel');
+      setPaymentMethod(defaultPaymentMethod);
       setMonth(defaultMonth);
       setDayText(String(new Date().getDate()));
       setNote('');
@@ -63,7 +79,7 @@ export function ExpenseFormModal({
       nameInputRef.current?.focus();
     }, 30);
     return () => window.clearTimeout(timer);
-  }, [isOpen, editingExpense, defaultMonth]);
+  }, [isOpen, editingExpense, defaultMonth, defaultPaymentMethod]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -107,6 +123,7 @@ export function ExpenseFormModal({
         amount: parsedAmount,
         category,
         type,
+        paymentMethod,
         month,
         day: parsedDay,
         note: note.trim() || undefined,
@@ -129,7 +146,7 @@ export function ExpenseFormModal({
         aria-hidden="true"
       />
 
-      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-white/[0.1] bg-[#11161F] shadow-2xl overflow-hidden">
+      <div className="relative z-10 w-full max-w-lg rounded-2xl border border-white/[0.1] bg-[#11161F] shadow-2xl overflow-hidden max-h-[92vh] overflow-y-auto">
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.08]">
           <h2
             id="expense-modal-title"
@@ -222,6 +239,37 @@ export function ExpenseFormModal({
             </div>
           </div>
 
+          {/* Payment Method Selector */}
+          <div>
+            <span className="block text-xs font-medium text-slate-300 mb-1.5">
+              Forma de pagamento
+            </span>
+            <div
+              className="grid grid-cols-2 sm:grid-cols-4 gap-1 p-1 rounded-lg bg-[#0A0D12] border border-white/[0.08]"
+              role="group"
+              aria-label="Forma de pagamento"
+            >
+              {PAYMENT_METHODS.map((pm) => {
+                const active = paymentMethod === pm.id;
+                return (
+                  <button
+                    key={pm.id}
+                    type="button"
+                    onClick={() => setPaymentMethod(pm.id)}
+                    aria-pressed={active}
+                    className={`py-2 px-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
+                      active
+                        ? 'bg-white/[0.11] text-slate-50'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {pm.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <span className="block text-xs font-medium text-slate-300 mb-1.5">
@@ -306,7 +354,7 @@ export function ExpenseFormModal({
               type="text"
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Ex.: Parcela 2/4, pago no débito..."
+              placeholder="Ex.: Parcela 2/4, nota fiscal..."
               className="w-full rounded-lg border border-white/[0.1] bg-[#0A0D12] px-3.5 py-2.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-emerald-500/60 focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
             />
           </div>
