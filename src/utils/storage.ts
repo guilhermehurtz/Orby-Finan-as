@@ -54,6 +54,25 @@ export function getStorageByteSize(): number {
   }
 }
 
+export function readLegacyLocalStore(): FinanceStoreData | null {
+  if (typeof window === 'undefined' || !window.localStorage) return null;
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const validated = validateBackupPayload(parsed);
+    if (!validated.ok) return null;
+    const isSeeded = Boolean((parsed as { seeded?: boolean }).seeded);
+    if (isSeeded || validated.data.expenses.length === 0) return null;
+    return {
+      ...validated.data,
+      seeded: false,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export function generateExpenseId(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID();

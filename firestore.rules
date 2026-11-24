@@ -1,0 +1,215 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 0: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Global hardened helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Validation Blueprint: UserProfile
+    function isValidUserProfile(data, userId) {
+      return data.keys().hasAll(['userId', 'username', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['userId', 'username', 'monthlyGoal', 'createdAt', 'updatedAt']) &&
+        data.userId is string &&
+        data.userId == request.auth.uid &&
+        data.userId == userId &&
+        data.username is string &&
+        data.username.size() >= 3 &&
+        data.username.size() <= 40 &&
+        (!('monthlyGoal' in data) || data.monthlyGoal == null || (data.monthlyGoal is number && data.monthlyGoal >= 0 && data.monthlyGoal <= 100000000)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // Validation Blueprint: Expense
+    function isValidCategory(cat) {
+      return cat is string && cat in [
+        'moradia',
+        'alimentacao',
+        'transporte',
+        'contas',
+        'saude',
+        'lazer',
+        'assinaturas',
+        'outros'
+      ];
+    }
+
+    function isValidExpenseType(t) {
+      return t is string && t in ['fixa', 'variavel'];
+    }
+
+    function isValidPaymentMethod(pm) {
+      return pm is string && pm in ['pix', 'credito', 'debito', 'dinheiro'];
+    }
+
+    function hasValidOptionalNote(data) {
+      return !('note' in data) || (data.note is string && data.note.size() <= 300);
+    }
+
+    function hasValidInstallmentMetadata(data) {
+      let hasGroup = 'installmentGroupId' in data;
+      let hasCurrent = 'installmentCurrent' in data;
+      let hasTotal = 'installmentTotal' in data;
+      return (!hasGroup && !hasCurrent && !hasTotal) || (
+        hasGroup && hasCurrent && hasTotal &&
+        isValidId(data.installmentGroupId) &&
+        data.installmentTotal is int &&
+        data.installmentTotal >= 2 &&
+        data.installmentTotal <= 60 &&
+        data.installmentCurrent is int &&
+        data.installmentCurrent >= 1 &&
+        data.installmentCurrent <= data.installmentTotal
+      );
+    }
+
+    function isValidExpense(data, userId) {
+      return data.keys().hasAll([
+          'userId',
+          'name',
+          'amount',
+          'category',
+          'type',
+          'paymentMethod',
+          'month',
+          'day',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'userId',
+          'name',
+          'amount',
+          'category',
+          'type',
+          'paymentMethod',
+          'month',
+          'day',
+          'note',
+          'installmentGroupId',
+          'installmentCurrent',
+          'installmentTotal',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.userId is string &&
+        data.userId == request.auth.uid &&
+        data.userId == userId &&
+        data.name is string &&
+        data.name.size() >= 1 &&
+        data.name.size() <= 120 &&
+        data.amount is number &&
+        data.amount > 0 &&
+        data.amount <= 100000000 &&
+        isValidCategory(data.category) &&
+        isValidExpenseType(data.type) &&
+        isValidPaymentMethod(data.paymentMethod) &&
+        data.month is string &&
+        data.month.size() == 7 &&
+        data.month.matches('^\\d{4}-(0[1-9]|1[0-2])$') &&
+        data.day is int &&
+        data.day >= 1 &&
+        data.day <= 31 &&
+        hasValidOptionalNote(data) &&
+        hasValidInstallmentMetadata(data) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // Collection 1: Private User Profile (/users/{userId})
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+        isValidId(userId) &&
+        isValidUserProfile(incoming(), userId) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isValidUserProfile(incoming(), userId) &&
+        isOwner(userId) &&
+        isValidId(userId) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time && (
+          // Action: Update monthly goal
+          incoming().diff(existing()).affectedKeys().hasOnly(['monthlyGoal', 'updatedAt']) ||
+          // Action: Update display username
+          incoming().diff(existing()).affectedKeys().hasOnly(['username', 'updatedAt'])
+        );
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      // Collection 2: Private User Expenses (/users/{userId}/expenses/{expenseId})
+      match /expenses/{expenseId} {
+        allow get: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(expenseId) &&
+          existing().userId == request.auth.uid;
+
+        allow list: if isOwner(userId) &&
+          isValidId(userId) &&
+          existing().userId == request.auth.uid;
+
+        allow create: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(expenseId) &&
+          isValidExpense(incoming(), userId) &&
+          incoming().createdAt == request.time &&
+          incoming().updatedAt == request.time &&
+          exists(/databases/$(database)/documents/users/$(userId));
+
+        allow update: if isValidExpense(incoming(), userId) &&
+          isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(expenseId) &&
+          existing().userId == request.auth.uid &&
+          incoming().userId == existing().userId &&
+          incoming().createdAt == existing().createdAt &&
+          incoming().updatedAt == request.time &&
+          exists(/databases/$(database)/documents/users/$(userId)) && (
+            // Action: Edit expense details (single or future installments)
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name',
+              'amount',
+              'category',
+              'type',
+              'paymentMethod',
+              'month',
+              'day',
+              'note',
+              'updatedAt'
+            ])
+          );
+
+        allow delete: if isOwner(userId) &&
+          isValidId(userId) &&
+          isValidId(expenseId) &&
+          existing().userId == request.auth.uid &&
+          exists(/databases/$(database)/documents/users/$(userId));
+      }
+    }
+  }
+}

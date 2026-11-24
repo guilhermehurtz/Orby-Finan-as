@@ -1,8 +1,10 @@
 import {
   CalendarRange,
+  Cloud,
   CreditCard,
   Database,
   LayoutDashboard,
+  LogOut,
   X,
 } from 'lucide-react';
 import { ActiveTab, MonthSummary } from '../types/finance';
@@ -16,6 +18,8 @@ interface SidebarProps {
   recentMonths: MonthSummary[];
   monthlyGoal: number | null;
   currentMonthTotal: number;
+  username: string;
+  onSignOut: () => void;
   mobileOpen: boolean;
   onCloseMobile: () => void;
 }
@@ -35,6 +39,8 @@ export function Sidebar({
   recentMonths,
   monthlyGoal,
   currentMonthTotal,
+  username,
+  onSignOut,
   mobileOpen,
   onCloseMobile,
 }: SidebarProps) {
@@ -195,6 +201,37 @@ export function Sidebar({
           </div>
         </div>
       )}
+
+      {/* Connected Account Footer */}
+      <div className="px-4 py-3 border-t border-white/[0.07] shrink-0 flex items-center justify-between gap-2 bg-[#0A0D12]/50">
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-emerald-500/15 text-emerald-300">
+            <Cloud className="h-3.5 w-3.5" aria-hidden="true" />
+          </span>
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-slate-200 truncate">
+              @{username}
+            </p>
+            <p className="text-[10px] text-slate-500 truncate">
+              Sincronizado
+            </p>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => {
+            onCloseMobile();
+            onSignOut();
+          }}
+          aria-label="Sair da conta"
+          title="Sair da conta"
+          className="min-h-[36px] inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium text-slate-400 hover:text-rose-200 hover:bg-rose-500/15 transition-colors shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400"
+        >
+          <LogOut className="h-3.5 w-3.5" aria-hidden="true" />
+          <span>Sair</span>
+        </button>
+      </div>
     </div>
   );
 

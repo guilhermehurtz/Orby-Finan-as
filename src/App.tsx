@@ -1,11 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
+import { User, onAuthStateChanged, signOut } from 'firebase/auth';
 import {
   CalendarRange,
   ChevronLeft,
   ChevronRight,
   CreditCard,
   Database,
+  HardDriveUpload,
   LayoutDashboard,
+  Loader2,
   Menu,
   Plus,
 } from 'lucide-react';
@@ -35,17 +38,30 @@ import {
   shiftMonth,
 } from './utils/finance';
 import { buildInitialSeedData } from './utils/seedData';
+import { generateExpenseId, readLegacyLocalStore } from './utils/storage';
+import { extractDisplayUsername } from './utils/authHelpers';
+import { auth } from './firebase';
 import {
-  generateExpenseId,
-  loadFinanceStore,
-  saveFinanceStore,
-} from './utils/storage';
+  CloudUserProfile,
+  createCloudExpenses,
+  deleteCloudExpenses,
+  ensureUserProfile,
+  replaceAllCloudData,
+  subscribeUserExpenses,
+  subscribeUserProfile,
+  updateCloudExpensesBatch,
+  updateCloudMonthlyGoal,
+} from './utils/cloudFinance';
+import { AuthScreen } from './components/AuthScreen';
 import { Sidebar } from './components/Sidebar';
 import { ComparisonBanner } from './components/ComparisonBanner';
 import { KpiStrip } from './components/KpiStrip';
 import { ChartsSection } from './components/ChartsSection';
 import { ExpenseLedger, QuickAddPayload } from './components/ExpenseLedger';
-import { ExpenseFormModal, ExpenseFormValues } from './components/ExpenseFormModal';
+import {
+  ExpenseFormModal,
+  ExpenseFormValues,
+} from './components/ExpenseFormModal';
 import { InstallmentDeleteDialog } from './components/InstallmentDeleteDialog';
 import { PaymentsView } from './components/PaymentsView';
 import { HistoryView } from './components/HistoryView';
@@ -59,11 +75,24 @@ const MOBILE_BOTTOM_TABS: {
   { id: 'overview', label: 'Início', icon: LayoutDashboard },
   { id: 'payments', label: 'Pagamentos', icon: CreditCard },
   { id: 'history', label: 'Histórico', icon: CalendarRange },
-  { id: 'data', label: 'Dados', icon: Database },
+  { id: 'data', label: 'Conta', icon: Database },
 ];
 
 export default function App() {
-  const [store, setStore] = useState<FinanceStoreData>(() => loadFinanceStore());
+  // Authentication & cloud sync state
+  const [user, setUser] = useState<User | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [cloudReady, setCloudReady] = useState(false);
+  const [profile, setProfile] = useState<CloudUserProfile | null>(null);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [fatalError, setFatalError] = useState<Error | null>(null);
+
+  // Optional one-click migration for legacy pre-cloud localStorage expenses
+  const [legacyLocalStore, setLegacyLocalStore] =
+    useState<FinanceStoreData | null>(null);
+  const [migratingLocal, setMigratingLocal] = useState(false);
+
+  // Navigation & filter state
   const [activeTab, setActiveTab] = useState<ActiveTab>('overview');
   const [selectedMonth, setSelectedMonth] = useState<string>(() =>
     getCurrentMonthKey()
@@ -84,17 +113,101 @@ export default function App() {
   // Transient user feedback banner
   const [feedbackNotice, setFeedbackNotice] = useState<string | null>(null);
 
-  // Persist to localStorage whenever store changes
+  // Listen to Firebase Auth state
   useEffect(() => {
-    saveFinanceStore(store);
-  }, [store]);
+    const unsubscribe = onAuthStateChanged(auth, (nextUser) => {
+      setUser(nextUser);
+      setAuthReady(true);
+      if (!nextUser) {
+        setProfile(null);
+        setExpenses([]);
+        setCloudReady(false);
+        setLegacyLocalStore(null);
+        setModalOpen(false);
+        setEditingExpense(null);
+        setPendingDeleteInstallment(null);
+        setActiveTab('overview');
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Ensure Firestore user profile exists, then attach real-time snapshots
+  useEffect(() => {
+    if (!user) return;
+
+    let cancelled = false;
+    let unsubProfile: (() => void) | null = null;
+    let unsubExpenses: (() => void) | null = null;
+
+    setCloudReady(false);
+
+    const migrationFlagKey = `orby_migrated_uid_${user.uid}`;
+    const alreadyMigrated =
+      typeof window !== 'undefined' &&
+      Boolean(window.localStorage.getItem(migrationFlagKey));
+    setLegacyLocalStore(alreadyMigrated ? null : readLegacyLocalStore());
+
+    const preferredUsername = extractDisplayUsername(
+      user.email,
+      user.displayName
+    );
+
+    const bootstrap = async () => {
+      try {
+        const ensured = await ensureUserProfile(user.uid, preferredUsername);
+        if (cancelled) return;
+        setProfile(ensured);
+
+        unsubProfile = subscribeUserProfile(
+          user.uid,
+          (nextProfile) => {
+            if (!cancelled && nextProfile) {
+              setProfile(nextProfile);
+            }
+          },
+          (err) => {
+            if (!cancelled) setFatalError(err);
+          }
+        );
+
+        let firstSnapshot = true;
+        unsubExpenses = subscribeUserExpenses(
+          user.uid,
+          (nextExpenses) => {
+            if (cancelled) return;
+            setExpenses(nextExpenses);
+            if (firstSnapshot) {
+              firstSnapshot = false;
+              setCloudReady(true);
+            }
+          },
+          (err) => {
+            if (!cancelled) setFatalError(err);
+          }
+        );
+      } catch (err) {
+        if (!cancelled) {
+          setFatalError(err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    };
+
+    void bootstrap();
+
+    return () => {
+      cancelled = true;
+      unsubProfile?.();
+      unsubExpenses?.();
+    };
+  }, [user]);
 
   // Clear category filter when switching months
   useEffect(() => {
     setSelectedCategory('all');
   }, [selectedMonth]);
 
-  // Reset scroll to top when switching views (especially via mobile bottom bar)
+  // Reset scroll to top when switching views
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
   }, [activeTab]);
@@ -105,6 +218,33 @@ export default function App() {
     const t = window.setTimeout(() => setFeedbackNotice(null), 4500);
     return () => window.clearTimeout(t);
   }, [feedbackNotice]);
+
+  // Surface fatal Firestore errors to ErrorBoundary
+  if (fatalError) {
+    throw fatalError;
+  }
+
+  const store: FinanceStoreData = useMemo(
+    () => ({
+      version: 1,
+      expenses,
+      monthlyGoal: profile?.monthlyGoal ?? null,
+      seeded: false,
+    }),
+    [expenses, profile?.monthlyGoal]
+  );
+
+  const displayUsername = useMemo(() => {
+    if (profile?.username) return profile.username;
+    if (user) return extractDisplayUsername(user.email, user.displayName);
+    return 'usuario';
+  }, [profile?.username, user]);
+
+  const authProviderLabel = useMemo(() => {
+    const providerId = user?.providerData?.[0]?.providerId;
+    if (providerId === 'google.com') return 'Google';
+    return 'Usuário e senha';
+  }, [user]);
 
   const currentRealMonth = useMemo(() => getCurrentMonthKey(), []);
 
@@ -169,55 +309,115 @@ export default function App() {
     [recordedMonthRows]
   );
 
+  const runCloudMutation = async (fn: () => Promise<void>) => {
+    try {
+      await fn();
+    } catch (err) {
+      setFatalError(err instanceof Error ? err : new Error(String(err)));
+    }
+  };
+
+  const handleSignOut = async () => {
+    try {
+      await signOut(auth);
+    } catch {
+      setFeedbackNotice('Não foi possível encerrar a sessão. Tente novamente.');
+    }
+  };
+
+  const handleImportLocalToCloud = async () => {
+    if (!user || !legacyLocalStore) return;
+    setMigratingLocal(true);
+    try {
+      const remapped = legacyLocalStore.expenses.map((item) => ({
+        ...item,
+        id: generateExpenseId(),
+      }));
+      await createCloudExpenses(user.uid, remapped);
+      if (legacyLocalStore.monthlyGoal && !profile?.monthlyGoal) {
+        await updateCloudMonthlyGoal(user.uid, legacyLocalStore.monthlyGoal);
+      }
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(`orby_migrated_uid_${user.uid}`, '1');
+      }
+      setLegacyLocalStore(null);
+      setFeedbackNotice(
+        `${remapped.length} ${
+          remapped.length === 1 ? 'despesa importada' : 'despesas importadas'
+        } para a sua conta na nuvem.`
+      );
+    } catch (err) {
+      setFatalError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      setMigratingLocal(false);
+    }
+  };
+
   const handleSaveExpense = (values: ExpenseFormValues, existingId?: string) => {
+    if (!user) return;
+    const uid = user.uid;
+
     if (existingId) {
-      setStore((prev) => {
-        const target = prev.expenses.find((e) => e.id === existingId);
-        const shouldUpdateFuture =
-          values.editScope === 'future' &&
-          Boolean(target?.installmentGroupId) &&
-          typeof target?.installmentCurrent === 'number';
+      const target = expenses.find((e) => e.id === existingId);
+      const shouldUpdateFuture =
+        values.editScope === 'future' &&
+        Boolean(target?.installmentGroupId) &&
+        typeof target?.installmentCurrent === 'number';
 
-        return {
-          ...prev,
-          seeded: false,
-          expenses: prev.expenses.map((item) => {
-            if (item.id === existingId) {
-              return {
-                ...item,
+      const updates: Array<{
+        id: string;
+        patch: {
+          name: string;
+          amount: number;
+          category: ExpenseCategory;
+          type: Expense['type'];
+          paymentMethod: PaymentMethod;
+          month: string;
+          day: number;
+          note?: string;
+        };
+      }> = [
+        {
+          id: existingId,
+          patch: {
+            name: values.name,
+            amount: values.amount,
+            category: values.category,
+            type: values.type,
+            paymentMethod: values.paymentMethod,
+            month: values.month,
+            day: values.day,
+            note: values.note,
+          },
+        },
+      ];
+
+      if (shouldUpdateFuture && target) {
+        for (const item of expenses) {
+          if (
+            item.id !== existingId &&
+            item.installmentGroupId === target.installmentGroupId &&
+            typeof item.installmentCurrent === 'number' &&
+            item.installmentCurrent > (target.installmentCurrent ?? 0)
+          ) {
+            updates.push({
+              id: item.id,
+              patch: {
                 name: values.name,
                 amount: values.amount,
                 category: values.category,
                 type: values.type,
                 paymentMethod: values.paymentMethod,
-                month: values.month,
-                day: values.day,
-                note: values.note,
-              };
-            }
-
-            if (
-              shouldUpdateFuture &&
-              item.installmentGroupId === target?.installmentGroupId &&
-              typeof item.installmentCurrent === 'number' &&
-              item.installmentCurrent > (target?.installmentCurrent ?? 0)
-            ) {
-              return {
-                ...item,
-                name: values.name,
-                amount: values.amount,
-                category: values.category,
-                type: values.type,
-                paymentMethod: values.paymentMethod,
+                month: item.month,
                 day: Math.min(values.day, daysInMonth(item.month)),
                 note: values.note,
-              };
-            }
+              },
+            });
+          }
+        }
+      }
 
-            return item;
-          }),
-        };
-      });
+      void runCloudMutation(() => updateCloudExpensesBatch(uid, updates));
 
       if (values.month !== selectedMonth) {
         setSelectedMonth(values.month);
@@ -253,13 +453,10 @@ export default function App() {
         generateExpenseId
       );
 
-      setStore((prev) => ({
-        ...prev,
-        seeded: false,
-        expenses: [...createdList, ...prev.expenses],
-      }));
+      void runCloudMutation(() => createCloudExpenses(uid, createdList));
 
-      const lastMonth = createdList[createdList.length - 1]?.month ?? values.month;
+      const lastMonth =
+        createdList[createdList.length - 1]?.month ?? values.month;
       setFeedbackNotice(
         `Compra "${values.name}" parcelada em ${createdList.length}x (${formatMonthShort(
           values.month
@@ -279,11 +476,7 @@ export default function App() {
         createdAt: new Date().toISOString(),
       };
 
-      setStore((prev) => ({
-        ...prev,
-        seeded: false,
-        expenses: [created, ...prev.expenses],
-      }));
+      void runCloudMutation(() => createCloudExpenses(uid, [created]));
     }
 
     if (values.month !== selectedMonth) {
@@ -295,6 +488,8 @@ export default function App() {
   };
 
   const handleQuickAdd = (payload: QuickAddPayload) => {
+    if (!user) return;
+    const uid = user.uid;
     const targetMonth = payload.month ?? selectedMonth;
     const day = payload.day ?? new Date().getDate();
 
@@ -317,17 +512,14 @@ export default function App() {
         generateExpenseId
       );
 
-      setStore((prev) => ({
-        ...prev,
-        seeded: false,
-        expenses: [...createdList, ...prev.expenses],
-      }));
+      void runCloudMutation(() => createCloudExpenses(uid, createdList));
 
       if (targetMonth !== selectedMonth) {
         setSelectedMonth(targetMonth);
       }
 
-      const lastMonth = createdList[createdList.length - 1]?.month ?? targetMonth;
+      const lastMonth =
+        createdList[createdList.length - 1]?.month ?? targetMonth;
       setFeedbackNotice(
         `Compra "${payload.name}" lançada em ${createdList.length}x (${formatMonthShort(
           targetMonth
@@ -348,11 +540,7 @@ export default function App() {
       createdAt: new Date().toISOString(),
     };
 
-    setStore((prev) => ({
-      ...prev,
-      seeded: false,
-      expenses: [created, ...prev.expenses],
-    }));
+    void runCloudMutation(() => createCloudExpenses(uid, [created]));
 
     if (targetMonth !== selectedMonth) {
       setSelectedMonth(targetMonth);
@@ -363,46 +551,42 @@ export default function App() {
   };
 
   const handleRequestDeleteExpense = (expense: Expense) => {
+    if (!user) return;
     if (expense.installmentGroupId && expense.installmentTotal) {
       setPendingDeleteInstallment(expense);
       return;
     }
 
-    setStore((prev) => ({
-      ...prev,
-      seeded: false,
-      expenses: prev.expenses.filter((e) => e.id !== expense.id),
-    }));
+    const uid = user.uid;
+    void runCloudMutation(() => deleteCloudExpenses(uid, [expense.id]));
   };
 
   const handleConfirmDeleteInstallment = (
     expense: Expense,
     scope: InstallmentActionScope
   ) => {
-    setStore((prev) => {
-      const nextExpenses = prev.expenses.filter((item) => {
-        if (scope === 'single') {
-          return item.id !== expense.id;
-        }
-        if (scope === 'all') {
-          return item.installmentGroupId !== expense.installmentGroupId;
-        }
-        // scope === 'future': remove this installment and any later installments in the group
-        if (item.installmentGroupId !== expense.installmentGroupId) {
-          return true;
-        }
-        const curr = item.installmentCurrent ?? 0;
-        const targetCurr = expense.installmentCurrent ?? 0;
-        return curr < targetCurr;
-      });
+    if (!user) return;
+    const uid = user.uid;
 
-      return {
-        ...prev,
-        seeded: false,
-        expenses: nextExpenses,
-      };
-    });
+    let idsToDelete: string[] = [];
+    if (scope === 'single') {
+      idsToDelete = [expense.id];
+    } else if (scope === 'all') {
+      idsToDelete = expenses
+        .filter((item) => item.installmentGroupId === expense.installmentGroupId)
+        .map((item) => item.id);
+    } else {
+      const targetCurr = expense.installmentCurrent ?? 0;
+      idsToDelete = expenses
+        .filter(
+          (item) =>
+            item.installmentGroupId === expense.installmentGroupId &&
+            (item.installmentCurrent ?? 0) >= targetCurr
+        )
+        .map((item) => item.id);
+    }
 
+    void runCloudMutation(() => deleteCloudExpenses(uid, idsToDelete));
     setPendingDeleteInstallment(null);
 
     if (scope === 'all') {
@@ -417,6 +601,7 @@ export default function App() {
   };
 
   const handleClonePreviousFixed = () => {
+    if (!user) return;
     const cloned = cloneFixedExpensesToMonth(
       store.expenses,
       previousMonth,
@@ -430,11 +615,8 @@ export default function App() {
       return;
     }
 
-    setStore((prev) => ({
-      ...prev,
-      seeded: false,
-      expenses: [...cloned, ...prev.expenses],
-    }));
+    const uid = user.uid;
+    void runCloudMutation(() => createCloudExpenses(uid, cloned));
     setFeedbackNotice(
       `${cloned.length} ${
         cloned.length === 1 ? 'despesa fixa copiada' : 'despesas fixas copiadas'
@@ -452,6 +634,64 @@ export default function App() {
     setEditingExpense(expense);
     setModalOpen(true);
   };
+
+  // Auth loading splash
+  if (!authReady) {
+    return (
+      <div className="min-h-dvh bg-[#0A0D12] text-slate-100 flex flex-col items-center justify-center gap-4 px-4">
+        <div className="flex items-center gap-3">
+          <span className="h-10 w-10 rounded-xl overflow-hidden flex items-center justify-center">
+            <img
+              src="/assets/aistudio/favicon_1_b76ee16a.png"
+              alt="Logo orby"
+              referrerPolicy="no-referrer"
+              className="h-full w-full object-contain scale-[1.12]"
+            />
+          </span>
+          <span className="text-2xl font-bold tracking-tight text-slate-50 font-[var(--font-display)] lowercase">
+            orby
+          </span>
+        </div>
+        <Loader2
+          className="h-5 w-5 animate-spin text-emerald-400"
+          aria-label="Verificando sessão"
+        />
+      </div>
+    );
+  }
+
+  // Unauthenticated gate
+  if (!user) {
+    return <AuthScreen />;
+  }
+
+  // Initial Firestore hydration loading state
+  if (!cloudReady) {
+    return (
+      <div className="min-h-dvh bg-[#0A0D12] text-slate-100 flex flex-col items-center justify-center gap-4 px-4">
+        <div className="flex items-center gap-3">
+          <span className="h-10 w-10 rounded-xl overflow-hidden flex items-center justify-center">
+            <img
+              src="/assets/aistudio/favicon_1_b76ee16a.png"
+              alt="Logo orby"
+              referrerPolicy="no-referrer"
+              className="h-full w-full object-contain scale-[1.12]"
+            />
+          </span>
+          <span className="text-2xl font-bold tracking-tight text-slate-50 font-[var(--font-display)] lowercase">
+            orby
+          </span>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-slate-400">
+          <Loader2
+            className="h-4 w-4 animate-spin text-emerald-400"
+            aria-hidden="true"
+          />
+          <span>Carregando dados de @{displayUsername}...</span>
+        </div>
+      </div>
+    );
+  }
 
   const showMonthSwitcher = activeTab === 'overview' || activeTab === 'payments';
 
@@ -471,6 +711,8 @@ export default function App() {
         recentMonths={recentMonthSummaries}
         monthlyGoal={store.monthlyGoal ?? null}
         currentMonthTotal={monthSummary.total}
+        username={displayUsername}
+        onSignOut={() => void handleSignOut()}
         mobileOpen={mobileMenuOpen}
         onCloseMobile={() => setMobileMenuOpen(false)}
       />
@@ -483,7 +725,7 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => setMobileMenuOpen(true)}
-                aria-label="Abrir menu de meses e meta"
+                aria-label="Abrir menu de meses, conta e meta"
                 className="lg:hidden flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-white/[0.08] text-slate-300 hover:bg-white/[0.05] hover:text-slate-100 transition-colors"
               >
                 <Menu className="h-5 w-5" aria-hidden="true" />
@@ -537,7 +779,9 @@ export default function App() {
                 </div>
               ) : (
                 <span className="text-sm sm:text-base font-semibold text-slate-100 font-[var(--font-display)] truncate">
-                  {activeTab === 'history' ? 'Histórico Mensal' : 'Dados e Backup'}
+                  {activeTab === 'history'
+                    ? 'Histórico Mensal'
+                    : 'Conta e Backup'}
                 </span>
               )}
             </div>
@@ -575,28 +819,53 @@ export default function App() {
 
           {activeTab === 'overview' && (
             <div className="space-y-4 sm:space-y-6">
-              {store.seeded && (
-                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 text-xs text-slate-400 pb-0.5">
-                  <p>
-                    Exibindo dados de demonstração para você explorar os gráficos e comparativos.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStore({
-                        version: 1,
-                        expenses: [],
-                        monthlyGoal: null,
-                        seeded: false,
-                      });
-                      setFeedbackNotice(
-                        'Dados de exemplo removidos. Comece registrando suas próprias despesas.'
-                      );
-                    }}
-                    className="text-emerald-400 hover:text-emerald-300 font-medium self-start sm:self-auto whitespace-nowrap transition-colors"
-                  >
-                    Começar do zero
-                  </button>
+              {legacyLocalStore && legacyLocalStore.expenses.length > 0 && (
+                <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/[0.07] px-4 py-3.5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div className="flex items-start gap-2.5 text-xs text-emerald-100">
+                    <HardDriveUpload
+                      className="h-4 w-4 text-emerald-300 shrink-0 mt-0.5"
+                      aria-hidden="true"
+                    />
+                    <span>
+                      Encontramos {legacyLocalStore.expenses.length}{' '}
+                      {legacyLocalStore.expenses.length === 1
+                        ? 'despesa salva'
+                        : 'despesas salvas'}{' '}
+                      anteriormente neste navegador. Deseja importar para @{displayUsername}?
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      disabled={migratingLocal}
+                      onClick={() => void handleImportLocalToCloud()}
+                      className="min-h-[34px] inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 disabled:opacity-60 text-[#04130D] text-xs font-semibold transition-colors whitespace-nowrap"
+                    >
+                      {migratingLocal && (
+                        <Loader2
+                          className="h-3.5 w-3.5 animate-spin"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span>Importar agora</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={migratingLocal}
+                      onClick={() => {
+                        if (typeof window !== 'undefined') {
+                          window.localStorage.setItem(
+                            `orby_migrated_uid_${user.uid}`,
+                            'dismissed'
+                          );
+                        }
+                        setLegacyLocalStore(null);
+                      }}
+                      className="min-h-[34px] px-2.5 py-1.5 text-xs text-slate-300 hover:text-slate-100"
+                    >
+                      Ignorar
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -665,31 +934,63 @@ export default function App() {
             <DataBackupView
               store={store}
               monthsCount={historical.monthsCount}
-              onUpdateGoal={(goal) =>
-                setStore((prev) => ({ ...prev, monthlyGoal: goal }))
-              }
-              onImportStore={(imported) => {
-                setStore(imported);
-                if (imported.expenses.length > 0) {
-                  const latest = [...imported.expenses]
+              username={displayUsername}
+              authProviderLabel={authProviderLabel}
+              localMigrationCount={legacyLocalStore?.expenses.length ?? 0}
+              onUpdateGoal={async (goal) => {
+                await runCloudMutation(() =>
+                  updateCloudMonthlyGoal(user.uid, goal)
+                );
+              }}
+              onImportStore={async (imported) => {
+                const remapped = imported.expenses.map((item) => ({
+                  ...item,
+                  id: generateExpenseId(),
+                }));
+                await runCloudMutation(() =>
+                  replaceAllCloudData(
+                    user.uid,
+                    expenses.map((e) => e.id),
+                    remapped,
+                    imported.monthlyGoal ?? null
+                  )
+                );
+                if (remapped.length > 0) {
+                  const latest = [...remapped]
                     .map((e) => e.month)
                     .sort()
                     .pop();
                   if (latest) setSelectedMonth(latest);
                 }
               }}
-              onRestoreDemo={() => {
-                setStore(buildInitialSeedData());
+              onImportLocalToCloud={handleImportLocalToCloud}
+              onRestoreDemo={async () => {
+                const demo = buildInitialSeedData();
+                const remapped = demo.expenses.map((item) => ({
+                  ...item,
+                  id: generateExpenseId(),
+                }));
+                await runCloudMutation(() =>
+                  replaceAllCloudData(
+                    user.uid,
+                    expenses.map((e) => e.id),
+                    remapped,
+                    demo.monthlyGoal ?? null
+                  )
+                );
                 setSelectedMonth(getCurrentMonthKey());
               }}
-              onClearAll={() => {
-                setStore({
-                  version: 1,
-                  expenses: [],
-                  monthlyGoal: null,
-                  seeded: false,
-                });
+              onClearAll={async () => {
+                await runCloudMutation(() =>
+                  replaceAllCloudData(
+                    user.uid,
+                    expenses.map((e) => e.id),
+                    [],
+                    null
+                  )
+                );
               }}
+              onSignOut={() => void handleSignOut()}
             />
           )}
         </main>

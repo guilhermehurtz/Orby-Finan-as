@@ -1,0 +1,154 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private user account profile and monthly spending goal settings for Orby.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the account owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "username": {
+          "type": "string",
+          "description": "Display username chosen at registration or synced from Google profile.",
+          "minLength": 3,
+          "maxLength": 40
+        },
+        "monthlyGoal": {
+          "type": "number",
+          "description": "Optional monthly spending target in BRL (0 or null means no goal set)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the account profile was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of the last profile update."
+        }
+      },
+      "required": ["userId", "username", "createdAt", "updatedAt"]
+    },
+    "Expense": {
+      "title": "Expense",
+      "description": "Individual monthly expense record (single or part of an installment plan) owned by a user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the expense owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "description": "Expense title or merchant description.",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "amount": {
+          "type": "number",
+          "description": "Positive BRL value for this expense or installment."
+        },
+        "category": {
+          "type": "string",
+          "description": "Expense category identifier.",
+          "enum": [
+            "moradia",
+            "alimentacao",
+            "transporte",
+            "contas",
+            "saude",
+            "lazer",
+            "assinaturas",
+            "outros"
+          ]
+        },
+        "type": {
+          "type": "string",
+          "description": "Whether the expense is recurring fixed or variable.",
+          "enum": ["fixa", "variavel"]
+        },
+        "paymentMethod": {
+          "type": "string",
+          "description": "Payment method used for the expense.",
+          "enum": ["pix", "credito", "debito", "dinheiro"]
+        },
+        "month": {
+          "type": "string",
+          "description": "Reference month in YYYY-MM format.",
+          "minLength": 7,
+          "maxLength": 7,
+          "pattern": "^\\d{4}-(0[1-9]|1[0-2])$"
+        },
+        "day": {
+          "type": "number",
+          "description": "Day of the month (1..31)."
+        },
+        "note": {
+          "type": "string",
+          "description": "Optional free-text note.",
+          "maxLength": 300
+        },
+        "installmentGroupId": {
+          "type": "string",
+          "description": "Shared identifier linking all monthly installments of a purchase.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "installmentCurrent": {
+          "type": "number",
+          "description": "1-based index of this installment (1..installmentTotal)."
+        },
+        "installmentTotal": {
+          "type": "number",
+          "description": "Total number of installments in the purchase (2..60)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the expense was created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the expense was last updated."
+        }
+      },
+      "required": [
+        "userId",
+        "name",
+        "amount",
+        "category",
+        "type",
+        "paymentMethod",
+        "month",
+        "day",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Private profile document and preferences for each authenticated user."
+    },
+    "/users/{userId}/expenses/{expenseId}": {
+      "schema": {
+        "$ref": "#/entities/Expense"
+      },
+      "description": "Private subcollection of monthly expenses and installment records owned by the user."
+    }
+  }
+}
